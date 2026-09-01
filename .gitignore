@@ -1,0 +1,6 @@
+/build/
+/builddir/
+/subprojects/u80211/
+/subprojects/packagecache/
+
+compile_commands.json

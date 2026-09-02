@@ -64,16 +64,22 @@ int main(void) {
 	}
 
 	libusb_device_handle *usb_handle = NULL;
-	libusb_device *matched_device = NULL;
+	libusb_device_handle *matched_device = NULL;
 	const struct libusb_interface_descriptor *matched_interface = NULL;
 	struct libusb_config_descriptor *matched_config = NULL;
 	u80211_drv_endpoint_handle_t *matched_endpoints = NULL;
 	for (ssize_t i = 0; i < device_count; ++i) {
+		libusb_device_handle *candidate_handle = NULL;
+		usb_status = libusb_open(devices[i], &candidate_handle);
+		if (usb_status != LIBUSB_SUCCESS)
+			continue;
+
 		struct libusb_config_descriptor *config = NULL;
 		usb_status = libusb_get_config_descriptor(devices[i], 0, &config);
 		if (usb_status != LIBUSB_SUCCESS) {
 			fprintf(stderr, "USB configuration descriptor retrieval failed: %s\n",
 				libusb_error_name(usb_status));
+			libusb_close(candidate_handle);
 			continue;
 		}
 
@@ -82,8 +88,8 @@ int main(void) {
 			for (int k = 0; k < config->interface[j].num_altsetting; ++k) {
 				const struct libusb_interface_descriptor *candidate_interface =
 					&config->interface[j].altsetting[k];
-				if (u80211_drv_probe(devices[i], (void *)candidate_interface) == U80211_DRV_STATUS_SUCCESS) {
-					matched_device = devices[i];
+				if (u80211_drv_probe(candidate_handle, (void *)candidate_interface) == U80211_DRV_STATUS_SUCCESS) {
+					matched_device = candidate_handle;
 					matched_interface = candidate_interface;
 					matched = 1;
 					break;
@@ -92,18 +98,12 @@ int main(void) {
 		}
 		if (!matched) {
 			libusb_free_config_descriptor(config);
+			libusb_close(candidate_handle);
 			continue;
 		}
 
 		matched_config = config;
-		usb_status = libusb_open(matched_device, &usb_handle);
-		if (usb_status != LIBUSB_SUCCESS) {
-			fprintf(stderr, "SKIP: cannot open matched USB device: %s\n", libusb_error_name(usb_status));
-			libusb_free_config_descriptor(matched_config);
-			libusb_free_device_list(devices, 1);
-			libusb_exit(usb_context);
-			return TEST_SKIP;
-		}
+		usb_handle = matched_device;
 		break;
 	}
 

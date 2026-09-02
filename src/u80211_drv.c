@@ -38,7 +38,7 @@ int u80211_drv_probe(u80211_drv_device_handle_t device, u80211_drv_interface_han
 	u80211_drv_interface_descriptor_t interface_descriptor;
 	if (u80211_drv_kernel_get_device_descriptor(device, &device_descriptor) != U80211_DRV_STATUS_SUCCESS || 
 			u80211_drv_kernel_get_interface_descriptor(interface, &interface_descriptor) != U80211_DRV_STATUS_SUCCESS)
-		return U80211_DRV_STATUS_NO_MATCH;
+		return U80211_DRV_STATUS_UNKNOWN_ERROR;
 
 	const u80211_drv_match_table_entry_t *entry = get_table_entry(&device_descriptor, &interface_descriptor);
 
@@ -50,7 +50,7 @@ int u80211_drv_attach(u80211_drv_device_handle_t device, u80211_drv_interface_ha
 	u80211_drv_interface_descriptor_t interface_descriptor;
 	if (u80211_drv_kernel_get_device_descriptor(device, &device_descriptor) != U80211_DRV_STATUS_SUCCESS || 
 			u80211_drv_kernel_get_interface_descriptor(interface, &interface_descriptor) != U80211_DRV_STATUS_SUCCESS)
-		return U80211_DRV_STATUS_NO_MATCH;
+		return U80211_DRV_STATUS_UNKNOWN_ERROR;
 
 	const u80211_drv_match_table_entry_t *entry = get_table_entry(&device_descriptor, &interface_descriptor);
 

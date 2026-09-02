@@ -28,6 +28,23 @@ typedef struct {
 	uint8_t interval;
 } u80211_drv_endpoint_descriptor_t;
 
+#define U80211_DRV_KERNEL_XFER_OUT 0x00
+#define U80211_DRV_KERNEL_XFER_IN 0x80
+#define U80211_DRV_KERNEL_XFER_DIRECTION_MASK 0x80
+
+#define U80211_DRV_KERNEL_XFER_REQUEST_TYPE_STANDARD 0x00
+#define U80211_DRV_KERNEL_XFER_REQUEST_TYPE_CLASS 0x20
+#define U80211_DRV_KERNEL_XFER_REQUEST_TYPE_VENDOR 0x40
+#define U80211_DRV_KERNEL_XFER_REQUEST_TYPE_RESERVED 0x60
+#define U80211_DRV_KERNEL_XFER_REQUEST_TYPE_MASK 0x60
+
+#define U80211_DRV_KERNEL_XFER_RECIPIENT_DEVICE 0x00
+#define U80211_DRV_KERNEL_XFER_RECIPIENT_INTERFACE 0x01
+#define U80211_DRV_KERNEL_XFER_RECIPIENT_ENDPOINT 0x02
+#define U80211_DRV_KERNEL_XFER_RECIPIENT_OTHER 0x03
+#define U80211_DRV_KERNEL_XFER_RECIPIENT_MASK 0x1f
+
+
 #define U80211_DRV_KERNEL_PRINT_LEVEL_INFO 0
 #define U80211_DRV_KERNEL_PRINT_LEVEL_WARN 1
 #define U80211_DRV_KERNEL_PRINT_LEVEL_ERROR 2
@@ -39,6 +56,7 @@ int u80211_drv_kernel_get_interface_descriptor(u80211_drv_interface_handle_t int
 int u80211_drv_kernel_get_endpoints(u80211_drv_interface_handle_t interface, u80211_drv_endpoint_handle_t *endpoints, size_t endpoint_count);
 int u80211_drv_kernel_get_endpoint_descriptor(u80211_drv_endpoint_handle_t endpoint, u80211_drv_endpoint_descriptor_t *descriptor);
 void u80211_drv_kernel_release_endpoint(u80211_drv_endpoint_handle_t endpoint);
+int u80211_drv_kernel_submit_control_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t flags, uint8_t request, uint16_t value, uint16_t index, void *buf, uint16_t buffer_size, unsigned int timeout);
 void u80211_drv_kernel_print(int level, const char *msg);
 
 #endif

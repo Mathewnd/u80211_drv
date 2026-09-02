@@ -1,5 +1,9 @@
+#define _POSIX_C_SOURCE 200809L
+
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <libusb.h>
 
@@ -81,6 +85,16 @@ int u80211_drv_kernel_submit_bulk_xfer_and_wait(u80211_drv_device_handle_t devic
 
 	*transferred_size = transferred;
 	return U80211_DRV_STATUS_SUCCESS;
+}
+
+void u80211_drv_kernel_stall_us(unsigned int microseconds) {
+	struct timespec remaining = {
+		.tv_sec = microseconds / 1000000,
+		.tv_nsec = (long)(microseconds % 1000000) * 1000,
+	};
+
+	while (nanosleep(&remaining, &remaining) < 0 && errno == EINTR)
+		;
 }
 
 #define U80211_DRV_KERNEL_PRINT_LEVEL_INFO 0

@@ -55,6 +55,7 @@ int u80211_drv_kernel_get_interface_descriptor(u80211_drv_interface_handle_t int
 int u80211_drv_kernel_get_endpoints(u80211_drv_interface_handle_t interface, u80211_drv_endpoint_descriptor_t *endpoints, size_t endpoint_count);
 int u80211_drv_kernel_submit_control_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t flags, uint8_t request, uint16_t value, uint16_t index, void *buf, uint16_t buffer_size, size_t *transferred_size, unsigned int timeout);
 int u80211_drv_kernel_submit_bulk_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t endpoint_address, void *buf, size_t buffer_size, size_t *transferred_size, unsigned int timeout);
+void u80211_drv_kernel_stall_us(unsigned int microseconds);
 void u80211_drv_kernel_print(int level, const char *msg);
 
 #endif

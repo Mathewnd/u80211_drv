@@ -11,6 +11,11 @@
 #define EFUSE_READ_SETTLE_US 50
 #define EFUSE_SECTION_LEN (U80211_DRV_RTL8188EU_EFUSE_WORDS_PER_SECTION * 2)
 #define EFUSE_SECTION_COUNT (U80211_DRV_RTL8188EU_EFUSE_MAP_LEN / EFUSE_SECTION_LEN)
+#define EFUSE_RTL_ID_OFFSET 0x000
+#define EFUSE_CCK_TX_POWER_BASE_INDEX_OFFSET 0x010
+#define EFUSE_HT40_1S_TX_POWER_BASE_INDEX_OFFSET 0x016
+#define EFUSE_XTAL_K_OFFSET 0x0b9
+#define EFUSE_MAC_ADDRESS_OFFSET 0x0d7
 
 int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device) {
 	uint16_t value;
@@ -55,6 +60,10 @@ int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device) {
 	}
 
 	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_rtl8188eu_efuse_finish(u80211_drv_device_handle_t device) {
+	return u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_EFUSE_ACCESS, U80211_DRV_RTL8188EU_EFUSE_ACCESS_DISABLE);
 }
 
 static int efuse_read_physical8(u80211_drv_device_handle_t device, uint16_t address, uint8_t *result) {
@@ -168,5 +177,24 @@ int u80211_drv_rtl8188eu_read_efuse(u80211_drv_device_handle_t device, uint8_t e
 		}
 	}
 
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN], u80211_drv_rtl8188eu_efuse_t *result) {
+	uint16_t rtl_id = (uint16_t)efuse_map[EFUSE_RTL_ID_OFFSET] | ((uint16_t)efuse_map[EFUSE_RTL_ID_OFFSET + 1] << 8);
+	if (rtl_id != U80211_DRV_RTL8188EU_EFUSE_RTL_ID)
+		return U80211_DRV_STATUS_FAULTY_HARDWARE;
+
+	result->rtl_id = rtl_id;
+	for (unsigned int i = 0; i < U80211_DRV_RTL8188EU_MAC_ADDRESS_LEN; ++i)
+		result->mac_address[i] = efuse_map[EFUSE_MAC_ADDRESS_OFFSET + i];
+
+	for (unsigned int i = 0; i < U80211_DRV_RTL8188EU_CCK_TX_POWER_BASE_INDEX_COUNT; ++i)
+		result->cck_tx_power_base_indexes[i] = efuse_map[EFUSE_CCK_TX_POWER_BASE_INDEX_OFFSET + i];
+
+	for (unsigned int i = 0; i < U80211_DRV_RTL8188EU_HT40_1S_TX_POWER_BASE_INDEX_COUNT; ++i)
+		result->ht40_1s_tx_power_base_indexes[i] = efuse_map[EFUSE_HT40_1S_TX_POWER_BASE_INDEX_OFFSET + i];
+
+	result->xtal_k = efuse_map[EFUSE_XTAL_K_OFFSET] & 0x3f;
 	return U80211_DRV_STATUS_SUCCESS;
 }

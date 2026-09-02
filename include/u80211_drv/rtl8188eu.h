@@ -29,13 +29,27 @@
 #define U80211_DRV_RTL8188EU_EFUSE_PHYSICAL_LEN 512
 #define U80211_DRV_RTL8188EU_EFUSE_MAP_LEN 512
 #define U80211_DRV_RTL8188EU_EFUSE_WORDS_PER_SECTION 4
+#define U80211_DRV_RTL8188EU_EFUSE_RTL_ID 0x8129
+#define U80211_DRV_RTL8188EU_MAC_ADDRESS_LEN 6
+#define U80211_DRV_RTL8188EU_CCK_TX_POWER_BASE_INDEX_COUNT 6
+#define U80211_DRV_RTL8188EU_HT40_1S_TX_POWER_BASE_INDEX_COUNT 5
 
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG 0xf0
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG_TRP_VAUX_EN (1u << 23)
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG_VER(value) (((value) >> 12) & 0xfu)
 
+typedef struct {
+	uint16_t rtl_id;
+	uint8_t mac_address[U80211_DRV_RTL8188EU_MAC_ADDRESS_LEN];
+	uint8_t cck_tx_power_base_indexes[U80211_DRV_RTL8188EU_CCK_TX_POWER_BASE_INDEX_COUNT];
+	uint8_t ht40_1s_tx_power_base_indexes[U80211_DRV_RTL8188EU_HT40_1S_TX_POWER_BASE_INDEX_COUNT];
+	uint8_t xtal_k;
+} u80211_drv_rtl8188eu_efuse_t;
+
 int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_efuse_finish(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_read_efuse(u80211_drv_device_handle_t device, uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN]);
+int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN], u80211_drv_rtl8188eu_efuse_t *result);
 int u80211_drv_rtl8188eu_reg_read8(u80211_drv_device_handle_t device, uint16_t reg, uint8_t *value);
 int u80211_drv_rtl8188eu_reg_read16(u80211_drv_device_handle_t device, uint16_t reg, uint16_t *value);
 int u80211_drv_rtl8188eu_reg_read32(u80211_drv_device_handle_t device, uint16_t reg, uint32_t *value);

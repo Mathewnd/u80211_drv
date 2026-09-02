@@ -12,7 +12,11 @@ _Static_assert((U80211_DRV_KERNEL_XFER_OUT | U80211_DRV_KERNEL_XFER_REQUEST_TYPE
 _Static_assert((U80211_DRV_KERNEL_XFER_IN | U80211_DRV_KERNEL_XFER_REQUEST_TYPE_VENDOR | U80211_DRV_KERNEL_XFER_RECIPIENT_ENDPOINT) == 0xc2, "invalid device-to-host vendor endpoint flags");
 
 static int u80211_drv_kernel_status_from_libusb(int status) {
-	return status == LIBUSB_SUCCESS ? U80211_DRV_STATUS_SUCCESS : U80211_DRV_STATUS_UNKNOWN_ERROR;
+	if (status == LIBUSB_SUCCESS)
+		return U80211_DRV_STATUS_SUCCESS;
+	if (status == LIBUSB_ERROR_TIMEOUT)
+		return U80211_DRV_STATUS_TIMEOUT;
+	return U80211_DRV_STATUS_UNKNOWN_ERROR;
 }
 
 void *u80211_drv_kernel_allocate(size_t size) {

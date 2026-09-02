@@ -26,8 +26,6 @@ int u80211_drv_kernel_get_device_descriptor(u80211_drv_device_handle_t device, u
 
 int u80211_drv_kernel_get_interface_descriptor(u80211_drv_interface_handle_t interface, u80211_drv_interface_descriptor_t *descriptor) {
 	const struct libusb_interface_descriptor *usb_descriptor = interface;
-	if (usb_descriptor == NULL)
-		return U80211_DRV_STATUS_NO_MATCH;
 
 	descriptor->number = usb_descriptor->bInterfaceNumber;
 	descriptor->class_code = usb_descriptor->bInterfaceClass;
@@ -46,6 +44,20 @@ int u80211_drv_kernel_get_endpoints(u80211_drv_interface_handle_t interface, u80
 		endpoints[i] = (void *)&usb_descriptor->endpoint[i];
 
 	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_kernel_get_endpoint_descriptor(u80211_drv_endpoint_handle_t endpoint, u80211_drv_endpoint_descriptor_t *descriptor) {
+	const struct libusb_endpoint_descriptor *usb_descriptor = endpoint;
+
+	descriptor->address = usb_descriptor->bEndpointAddress;
+	descriptor->attributes = usb_descriptor->bmAttributes;
+	descriptor->maximum_packet_size = usb_descriptor->wMaxPacketSize;
+	descriptor->interval = usb_descriptor->bInterval;
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
+void u80211_drv_kernel_release_endpoint(u80211_drv_endpoint_handle_t endpoint) {
+	(void)endpoint;
 }
 
 #define U80211_DRV_KERNEL_PRINT_LEVEL_INFO 0

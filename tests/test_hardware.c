@@ -151,6 +151,18 @@ int main(void) {
 		return tap_descriptor == -2 ? TEST_FAILURE : TEST_SKIP;
 	}
 
+	usb_status = libusb_reset_device(matched_device);
+	if (usb_status != LIBUSB_SUCCESS) {
+		fprintf(stderr, "USB device reset failed: %s\n", libusb_error_name(usb_status));
+		close(tap_descriptor);
+		u80211_drv_kernel_free(matched_endpoints);
+		libusb_close(usb_handle);
+		libusb_free_config_descriptor(matched_config);
+		libusb_free_device_list(devices, 1);
+		libusb_exit(usb_context);
+		return TEST_FAILURE;
+	}
+
 	int attach_status = u80211_drv_attach(matched_device, (void *)matched_interface);
 	if (attach_status != U80211_DRV_STATUS_SUCCESS) {
 		fprintf(stderr, "driver attach failed for USB device: %d\n", attach_status);

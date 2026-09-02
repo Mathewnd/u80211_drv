@@ -6,7 +6,6 @@
 
 typedef void *u80211_drv_device_handle_t;
 typedef void *u80211_drv_interface_handle_t;
-typedef void *u80211_drv_endpoint_handle_t;
 
 typedef struct {
 	uint16_t vendor_id;
@@ -53,10 +52,9 @@ void *u80211_drv_kernel_allocate(size_t size);
 void u80211_drv_kernel_free(void *memory);
 int u80211_drv_kernel_get_device_descriptor(u80211_drv_device_handle_t device, u80211_drv_device_descriptor_t *descriptor);
 int u80211_drv_kernel_get_interface_descriptor(u80211_drv_interface_handle_t interface, u80211_drv_interface_descriptor_t *descriptor);
-int u80211_drv_kernel_get_endpoints(u80211_drv_interface_handle_t interface, u80211_drv_endpoint_handle_t *endpoints, size_t endpoint_count);
-int u80211_drv_kernel_get_endpoint_descriptor(u80211_drv_endpoint_handle_t endpoint, u80211_drv_endpoint_descriptor_t *descriptor);
-void u80211_drv_kernel_release_endpoint(u80211_drv_endpoint_handle_t endpoint);
-int u80211_drv_kernel_submit_control_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t flags, uint8_t request, uint16_t value, uint16_t index, void *buf, uint16_t buffer_size, unsigned int timeout);
+int u80211_drv_kernel_get_endpoints(u80211_drv_interface_handle_t interface, u80211_drv_endpoint_descriptor_t *endpoints, size_t endpoint_count);
+int u80211_drv_kernel_submit_control_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t flags, uint8_t request, uint16_t value, uint16_t index, void *buf, uint16_t buffer_size, size_t *transferred_size, unsigned int timeout);
+int u80211_drv_kernel_submit_bulk_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t endpoint_address, void *buf, size_t buffer_size, size_t *transferred_size, unsigned int timeout);
 void u80211_drv_kernel_print(int level, const char *msg);
 
 #endif

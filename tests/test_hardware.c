@@ -67,7 +67,7 @@ int main(void) {
 	libusb_device_handle *matched_device = NULL;
 	const struct libusb_interface_descriptor *matched_interface = NULL;
 	struct libusb_config_descriptor *matched_config = NULL;
-	u80211_drv_endpoint_handle_t *matched_endpoints = NULL;
+	u80211_drv_endpoint_descriptor_t *matched_endpoints = NULL;
 	for (ssize_t i = 0; i < device_count; ++i) {
 		libusb_device_handle *candidate_handle = NULL;
 		usb_status = libusb_open(devices[i], &candidate_handle);
@@ -141,24 +141,8 @@ int main(void) {
 		libusb_exit(usb_context);
 		return TEST_FAILURE;
 	}
-	for (size_t i = 0; i < interface_descriptor.endpoint_count; ++i) {
-		u80211_drv_endpoint_descriptor_t endpoint_descriptor;
-		if (u80211_drv_kernel_get_endpoint_descriptor(matched_endpoints[i], &endpoint_descriptor) != U80211_DRV_STATUS_SUCCESS) {
-			for (size_t j = 0; j < i; ++j)
-				u80211_drv_kernel_release_endpoint(matched_endpoints[j]);
-			u80211_drv_kernel_free(matched_endpoints);
-			libusb_close(usb_handle);
-			libusb_free_config_descriptor(matched_config);
-			libusb_free_device_list(devices, 1);
-			libusb_exit(usb_context);
-			return TEST_FAILURE;
-		}
-	}
-
 	int tap_descriptor = attach_tap("tap0");
 	if (tap_descriptor < 0) {
-		for (size_t i = 0; i < interface_descriptor.endpoint_count; ++i)
-			u80211_drv_kernel_release_endpoint(matched_endpoints[i]);
 		u80211_drv_kernel_free(matched_endpoints);
 		libusb_close(usb_handle);
 		libusb_free_config_descriptor(matched_config);
@@ -171,8 +155,6 @@ int main(void) {
 	if (attach_status != U80211_DRV_STATUS_SUCCESS) {
 		fprintf(stderr, "driver attach failed for USB device: %d\n", attach_status);
 		close(tap_descriptor);
-		for (size_t i = 0; i < interface_descriptor.endpoint_count; ++i)
-			u80211_drv_kernel_release_endpoint(matched_endpoints[i]);
 		u80211_drv_kernel_free(matched_endpoints);
 		libusb_close(usb_handle);
 		libusb_free_config_descriptor(matched_config);
@@ -184,8 +166,6 @@ int main(void) {
 	printf("u80211_drv: attached USB device to tap0\n");
 
 	close(tap_descriptor);
-	for (size_t i = 0; i < interface_descriptor.endpoint_count; ++i)
-		u80211_drv_kernel_release_endpoint(matched_endpoints[i]);
 	u80211_drv_kernel_free(matched_endpoints);
 	libusb_close(usb_handle);
 	libusb_free_config_descriptor(matched_config);

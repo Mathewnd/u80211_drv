@@ -67,6 +67,7 @@ int main(void) {
 	libusb_device *matched_device = NULL;
 	const struct libusb_interface_descriptor *matched_interface = NULL;
 	struct libusb_config_descriptor *matched_config = NULL;
+	u80211_drv_endpoint_handle_t *matched_endpoints = NULL;
 	for (ssize_t i = 0; i < device_count; ++i) {
 		struct libusb_config_descriptor *config = NULL;
 		usb_status = libusb_get_config_descriptor(devices[i], 0, &config);
@@ -113,8 +114,37 @@ int main(void) {
 		return TEST_SKIP;
 	}
 
+	u80211_drv_interface_descriptor_t interface_descriptor;
+	if (u80211_drv_kernel_get_interface_descriptor((void *)matched_interface, &interface_descriptor) != U80211_DRV_STATUS_SUCCESS) {
+		libusb_close(usb_handle);
+		libusb_free_config_descriptor(matched_config);
+		libusb_free_device_list(devices, 1);
+		libusb_exit(usb_context);
+		return TEST_FAILURE;
+	}
+
+	if (interface_descriptor.endpoint_count != 0) {
+		matched_endpoints = u80211_drv_kernel_allocate(interface_descriptor.endpoint_count * sizeof(*matched_endpoints));
+		if (matched_endpoints == NULL) {
+			libusb_close(usb_handle);
+			libusb_free_config_descriptor(matched_config);
+			libusb_free_device_list(devices, 1);
+			libusb_exit(usb_context);
+			return TEST_FAILURE;
+		}
+	}
+	if (u80211_drv_kernel_get_endpoints((void *)matched_interface, matched_endpoints, interface_descriptor.endpoint_count) != U80211_DRV_STATUS_SUCCESS) {
+		u80211_drv_kernel_free(matched_endpoints);
+		libusb_close(usb_handle);
+		libusb_free_config_descriptor(matched_config);
+		libusb_free_device_list(devices, 1);
+		libusb_exit(usb_context);
+		return TEST_FAILURE;
+	}
+
 	int tap_descriptor = attach_tap("tap0");
 	if (tap_descriptor < 0) {
+		u80211_drv_kernel_free(matched_endpoints);
 		libusb_close(usb_handle);
 		libusb_free_config_descriptor(matched_config);
 		libusb_free_device_list(devices, 1);
@@ -126,6 +156,7 @@ int main(void) {
 	if (attach_status != U80211_DRV_STATUS_SUCCESS) {
 		fprintf(stderr, "driver attach failed for USB device: %d\n", attach_status);
 		close(tap_descriptor);
+		u80211_drv_kernel_free(matched_endpoints);
 		libusb_close(usb_handle);
 		libusb_free_config_descriptor(matched_config);
 		libusb_free_device_list(devices, 1);
@@ -136,6 +167,7 @@ int main(void) {
 	printf("u80211_drv: attached USB device to tap0\n");
 
 	close(tap_descriptor);
+	u80211_drv_kernel_free(matched_endpoints);
 	libusb_close(usb_handle);
 	libusb_free_config_descriptor(matched_config);
 	libusb_free_device_list(devices, 1);

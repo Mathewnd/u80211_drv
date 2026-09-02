@@ -20,16 +20,22 @@
 #define U80211_DRV_RTL8188EU_REG_9346CR_EEPROM_ENABLE (1u << 5)
 
 #define U80211_DRV_RTL8188EU_REG_EFUSE_CTRL 0x0030
+#define U80211_DRV_RTL8188EU_REG_EFUSE_CTRL_READ_READY (1u << 31)
 
 #define U80211_DRV_RTL8188EU_REG_EFUSE_ACCESS 0x00cf
 #define U80211_DRV_RTL8188EU_EFUSE_ACCESS_ENABLE 0x69
 #define U80211_DRV_RTL8188EU_EFUSE_ACCESS_DISABLE 0x00
+
+#define U80211_DRV_RTL8188EU_EFUSE_PHYSICAL_LEN 512
+#define U80211_DRV_RTL8188EU_EFUSE_MAP_LEN 512
+#define U80211_DRV_RTL8188EU_EFUSE_WORDS_PER_SECTION 4
 
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG 0xf0
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG_TRP_VAUX_EN (1u << 23)
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG_VER(value) (((value) >> 12) & 0xfu)
 
 int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_read_efuse(u80211_drv_device_handle_t device, uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN]);
 int u80211_drv_rtl8188eu_reg_read8(u80211_drv_device_handle_t device, uint16_t reg, uint8_t *value);
 int u80211_drv_rtl8188eu_reg_read16(u80211_drv_device_handle_t device, uint16_t reg, uint16_t *value);
 int u80211_drv_rtl8188eu_reg_read32(u80211_drv_device_handle_t device, uint16_t reg, uint32_t *value);

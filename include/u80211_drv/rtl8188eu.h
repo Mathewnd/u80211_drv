@@ -94,6 +94,9 @@
 #define U80211_DRV_RTL8188EU_REG_CR_SECURITY_ENABLE (1u << 9)
 #define U80211_DRV_RTL8188EU_REG_CR_CALTIMER_ENABLE (1u << 10)
 
+#define U80211_DRV_RTL8188EU_REG_MSR 0x0102
+#define U80211_DRV_RTL8188EU_REG_MSR_NETWORK_TYPE_MASK 0x03
+
 #define U80211_DRV_RTL8188EU_REG_PBP 0x0104
 #define U80211_DRV_RTL8188EU_REG_PBP_128_BYTES 0x11
 
@@ -133,6 +136,27 @@
 
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM 0x04ca
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM_8188EU 0x07
+
+#define U80211_DRV_RTL8188EU_REG_RCR 0x0608
+#define U80211_DRV_RTL8188EU_REG_RCR_AAP (1u << 0)
+#define U80211_DRV_RTL8188EU_REG_RCR_APM (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_RCR_AM (1u << 2)
+#define U80211_DRV_RTL8188EU_REG_RCR_AB (1u << 3)
+#define U80211_DRV_RTL8188EU_REG_RCR_AMF (1u << 13)
+#define U80211_DRV_RTL8188EU_REG_RCR_HTC_LOC_CTRL (1u << 14)
+#define U80211_DRV_RTL8188EU_REG_RCR_APP_PHYSTS (1u << 28)
+#define U80211_DRV_RTL8188EU_REG_RCR_APP_ICV (1u << 29)
+#define U80211_DRV_RTL8188EU_REG_RCR_APP_MIC (1u << 30)
+
+#define U80211_DRV_RTL8188EU_REG_RX_DRVINFO_SZ 0x060f
+#define U80211_DRV_RTL8188EU_RX_DRVINFO_SZ 4
+
+#define U80211_DRV_RTL8188EU_REG_MACID 0x0610
+#define U80211_DRV_RTL8188EU_REG_MAR 0x0620
+
+#define U80211_DRV_RTL8188EU_REG_RXFLTMAP0 0x06a0
+#define U80211_DRV_RTL8188EU_REG_RXFLTMAP1 0x06a2
+#define U80211_DRV_RTL8188EU_REG_RXFLTMAP2 0x06a4
 
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A 0x0824
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_CCK_HIGH_POWER (1u << 9)
@@ -199,6 +223,7 @@ int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t devi
 int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_packet_buffer(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_initialize_llt(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_mac_configure_wmac(u80211_drv_rtl8188eu_t *rtl8188eu);
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);

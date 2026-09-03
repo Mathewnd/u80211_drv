@@ -206,3 +206,64 @@ int u80211_drv_rtl8188eu_mac_initialize_llt(u80211_drv_device_handle_t device) {
 
 	return rtl8188eu_llt_write(device, U80211_DRV_RTL8188EU_LLT_LAST_ENTRY, first_remaining_page);
 }
+
+int u80211_drv_rtl8188eu_mac_configure_wmac(u80211_drv_rtl8188eu_t *rtl8188eu) {
+	// 32-byte phy data aftter every rx descriptor
+	u80211_drv_device_handle_t device = rtl8188eu->device;
+	int status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_RX_DRVINFO_SZ, U80211_DRV_RTL8188EU_RX_DRVINFO_SZ);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// program the efuse mac into the wmac
+	for (unsigned int i = 0; i < U80211_DRV_RTL8188EU_MAC_ADDRESS_LEN; ++i) {
+		status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_MACID + i, rtl8188eu->efuse.mac_address[i]);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+	}
+
+	// set to 'no link' mode
+	uint8_t msr;
+	status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_MSR, &msr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	msr &= ~U80211_DRV_RTL8188EU_REG_MSR_NETWORK_TYPE_MASK;
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_MSR, msr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// configure the receive filter
+	// (any frames, append phy receive status, report icv and mic information)
+	uint32_t rcr = U80211_DRV_RTL8188EU_REG_RCR_AAP |
+		U80211_DRV_RTL8188EU_REG_RCR_APM |
+		U80211_DRV_RTL8188EU_REG_RCR_AM |
+		U80211_DRV_RTL8188EU_REG_RCR_AB |
+		U80211_DRV_RTL8188EU_REG_RCR_AMF |
+		U80211_DRV_RTL8188EU_REG_RCR_HTC_LOC_CTRL |
+		U80211_DRV_RTL8188EU_REG_RCR_APP_PHYSTS |
+		U80211_DRV_RTL8188EU_REG_RCR_APP_ICV |
+		U80211_DRV_RTL8188EU_REG_RCR_APP_MIC;
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_RCR, rcr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// accept all multicasts
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_MAR, UINT32_MAX);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_MAR + 4, UINT32_MAX);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// accept management and data, reject control
+	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_RXFLTMAP0, UINT16_MAX);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_RXFLTMAP1, 0);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	return u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_RXFLTMAP2, UINT16_MAX);
+}

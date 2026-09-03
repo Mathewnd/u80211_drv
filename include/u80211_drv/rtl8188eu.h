@@ -115,6 +115,12 @@
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM 0x04ca
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM_8188EU 0x07
 
+#define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1 0x0c50
+#define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_LATCH 0x69553422
+#define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_FINAL 0x69553420
+
+#define U80211_DRV_RTL8188EU_REG_OFDM0_AGCRSSITABLE 0x0c78
+
 #define U80211_DRV_RTL8188EU_TX_TOTAL_PAGE_NUM 0xa9
 #define U80211_DRV_RTL8188EU_TX_PAGE_NUM_HI_PQ 0x29
 #define U80211_DRV_RTL8188EU_TX_PAGE_NUM_LO_PQ 0x1c
@@ -153,6 +159,7 @@ int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_start(u80211_drv_device_handle_t device);

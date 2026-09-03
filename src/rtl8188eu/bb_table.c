@@ -24,6 +24,7 @@
 #include <u80211_drv/status.h>
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
+#define RTL8188EU_AGC_TABLE_ENTRY_COUNT 128
 
 // Imported from OpenBSD sys/dev/ic/r92creg.h.
 static const uint16_t rtl8188eu_bb_regs[] = {
@@ -93,6 +94,35 @@ static const uint32_t rtl8188eu_bb_values[] = {
 	0x00000000, 0x00000300
 };
 
+static const uint32_t rtl8188eu_agc_values[] = {
+	0xfb000001, 0xfb010001, 0xfb020001, 0xfb030001, 0xfb040001,
+	0xfb050001, 0xfa060001, 0xf9070001, 0xf8080001, 0xf7090001,
+	0xf60a0001, 0xf50b0001, 0xf40c0001, 0xf30d0001, 0xf20e0001,
+	0xf10f0001, 0xf0100001, 0xef110001, 0xee120001, 0xed130001,
+	0xec140001, 0xeb150001, 0xea160001, 0xe9170001, 0xe8180001,
+	0xe7190001, 0xe61a0001, 0xe51b0001, 0xe41c0001, 0xe31d0001,
+	0xe21e0001, 0xe11f0001, 0x8a200001, 0x89210001, 0x88220001,
+	0x87230001, 0x86240001, 0x85250001, 0x84260001, 0x83270001,
+	0x82280001, 0x6b290001, 0x6a2a0001, 0x692b0001, 0x682c0001,
+	0x672d0001, 0x662e0001, 0x652f0001, 0x64300001, 0x63310001,
+	0x62320001, 0x61330001, 0x46340001, 0x45350001, 0x44360001,
+	0x43370001, 0x42380001, 0x41390001, 0x403a0001, 0x403b0001,
+	0x403c0001, 0x403d0001, 0x403e0001, 0x403f0001, 0xfb400001,
+	0xfb410001, 0xfb420001, 0xfb430001, 0xfb440001, 0xfb450001,
+	0xfb460001, 0xfb470001, 0xfb480001, 0xfa490001, 0xf94a0001,
+	0xf84b0001, 0xf74c0001, 0xf64d0001, 0xf54e0001, 0xf44f0001,
+	0xf3500001, 0xf2510001, 0xf1520001, 0xf0530001, 0xef540001,
+	0xee550001, 0xed560001, 0xec570001, 0xeb580001, 0xea590001,
+	0xe95a0001, 0xe85b0001, 0xe75c0001, 0xe65d0001, 0xe55e0001,
+	0xe45f0001, 0xe3600001, 0xe2610001, 0xc3620001, 0xc2630001,
+	0xc1640001, 0x8b650001, 0x8a660001, 0x89670001, 0x88680001,
+	0x87690001, 0x866a0001, 0x856b0001, 0x846c0001, 0x676d0001,
+	0x666e0001, 0x656f0001, 0x64700001, 0x63710001, 0x62720001,
+	0x61730001, 0x60740001, 0x46750001, 0x45760001, 0x44770001,
+	0x43780001, 0x42790001, 0x417a0001, 0x407b0001, 0x407c0001,
+	0x407d0001, 0x407e0001, 0x407f0001
+};
+
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device) {
 	uint16_t value;
 	int status = u80211_drv_rtl8188eu_reg_read16(device, U80211_DRV_RTL8188EU_REG_SYS_FUNC, &value);
@@ -137,5 +167,30 @@ int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device) {
 		u80211_drv_kernel_stall_us(1);
 	}
 
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device) {
+	for (size_t i = 0; i < ARRAY_SIZE(rtl8188eu_agc_values); ++i) {
+		int status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_OFDM0_AGCRSSITABLE, rtl8188eu_agc_values[i]);
+		if (status != U80211_DRV_STATUS_SUCCESS) {
+			u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: AGC table write failed");
+			return status;
+		}
+
+		u80211_drv_kernel_stall_us(1);
+	}
+
+	int status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1, U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_LATCH);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	u80211_drv_kernel_stall_us(1);
+
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1, U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_FINAL);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	u80211_drv_kernel_stall_us(1);
 	return U80211_DRV_STATUS_SUCCESS;
 }

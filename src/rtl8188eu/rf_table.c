@@ -25,6 +25,7 @@
 
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 #define RTL8188EU_RF_TABLE_ENTRY_COUNT 95
+#define RTL8188EU_RF_READ_DELAY_US 1000
 
 // Imported from OpenBSD sys/dev/ic/r92creg.h.
 static const uint16_t rtl8188eu_rf_regs[] = {
@@ -63,6 +64,45 @@ int u80211_drv_rtl8188eu_rf_write(u80211_drv_device_handle_t device, uint8_t rf_
 		return status;
 
 	u80211_drv_kernel_stall_us(1);
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_rtl8188eu_rf_read(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t *value) {
+	// drop read edge
+	uint32_t hssi_param2;
+	int status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A, &hssi_param2);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A, hssi_param2 & ~U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_EDGE);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	u80211_drv_kernel_stall_us(RTL8188EU_RF_READ_DELAY_US);
+
+	// program rf register address and raise read edge
+	uint32_t command = hssi_param2 & ~U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_ADDRESS_MASK;
+	command |= ((uint32_t)rf_reg << U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_ADDRESS_SHIFT) & U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_ADDRESS_MASK;
+	command |= U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_EDGE;
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A, command);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	u80211_drv_kernel_stall_us(RTL8188EU_RF_READ_DELAY_US);
+
+	// read back
+	uint32_t hssi_param1;
+	status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_HSSI_PARAM1_A, &hssi_param1);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	uint16_t readback_reg = (hssi_param1 & U80211_DRV_RTL8188EU_REG_HSSI_PARAM1_PI) != 0 ? U80211_DRV_RTL8188EU_REG_HSPI_READBACK_A : U80211_DRV_RTL8188EU_REG_LSSI_READBACK_A;
+	uint32_t readback;
+	status = u80211_drv_rtl8188eu_reg_read32(device, readback_reg, &readback);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	*value = readback & U80211_DRV_RTL8188EU_RF_READBACK_MASK;
 	return U80211_DRV_STATUS_SUCCESS;
 }
 

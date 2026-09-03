@@ -204,10 +204,16 @@
 #define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_CCK_ENABLE (1u << 24)
 #define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_OFDM_ENABLE (1u << 25)
 
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM1_A 0x0820
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM1_PI (1u << 8)
+
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A 0x0824
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_CCK_HIGH_POWER (1u << 9)
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_ADDRESS_LENGTH (1u << 10)
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_DATA_LENGTH (1u << 11)
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_ADDRESS_MASK 0x7f800000
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_ADDRESS_SHIFT 23
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_READ_EDGE (1u << 31)
 
 #define U80211_DRV_RTL8188EU_REG_LSSI_PARAM_A 0x0840
 #define U80211_DRV_RTL8188EU_REG_LSSI_PARAM_ADDRESS_SHIFT 20
@@ -219,6 +225,11 @@
 
 #define U80211_DRV_RTL8188EU_REG_RF_IFACE_SW_A 0x0870
 #define U80211_DRV_RTL8188EU_REG_RF_IFACE_SW_RF_ENV (1u << 4)
+
+#define U80211_DRV_RTL8188EU_REG_LSSI_READBACK_A 0x08a0
+#define U80211_DRV_RTL8188EU_REG_HSPI_READBACK_A 0x08b8
+#define U80211_DRV_RTL8188EU_RF_READBACK_MASK 0x000fffff
+#define U80211_DRV_RTL8188EU_RF_CHNLBW 0x18
 
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1 0x0c50
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_LATCH 0x69553422
@@ -269,6 +280,7 @@ typedef struct {
 	uint8_t tx_endpoint_normal;
 	uint8_t tx_endpoint_low;
 	bool cck_high_power;
+	uint32_t rf_chnlbw;
 	u80211_drv_rtl8188eu_efuse_t efuse;
 } u80211_drv_rtl8188eu_t;
 
@@ -295,6 +307,7 @@ int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8188eu);
 int u80211_drv_rtl8188eu_rf_write(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t value);
+int u80211_drv_rtl8188eu_rf_read(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t *value);
 int u80211_drv_rtl8188eu_rf_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);

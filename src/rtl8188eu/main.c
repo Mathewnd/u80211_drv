@@ -136,6 +136,12 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: RF table initialized");
 
+	status = u80211_drv_rtl8188eu_rf_read(rtl8188eu->device, U80211_DRV_RTL8188EU_RF_CHNLBW, &rtl8188eu->rf_chnlbw);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: RF channel state cached");
+
 	status = u80211_drv_rtl8188eu_mac_configure_packet_buffer(rtl8188eu->device);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;

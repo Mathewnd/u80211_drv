@@ -8,6 +8,9 @@
 #define RTL8188EU_FIRMWARE_PREPARE_DELAY_US  50
 #define RTL8188EU_FIRMWARE_WRITE_SIZE  196
 #define RTL8188EU_FIRMWARE_PAGE_COUNT  8
+#define RTL8188EU_FIRMWARE_MAX_POLLS  1000
+#define RTL8188EU_FIRMWARE_CHECKSUM_POLL_DELAY_US  5
+#define RTL8188EU_FIRMWARE_READY_POLL_DELAY_US  10
 
 static int firmware_reset(u80211_drv_device_handle_t device) {
 	// hold mcu wrapper
@@ -187,4 +190,76 @@ int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, cons
 	}
 
 	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_rtl8188eu_firmware_start(u80211_drv_device_handle_t device) {
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: waiting for firmware checksum");
+
+	uint32_t value32;
+	unsigned int poll;
+	int status;
+	for (poll = 0; poll < RTL8188EU_FIRMWARE_MAX_POLLS; ++poll) {
+		status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, &value32);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+
+		if ((value32 & U80211_DRV_RTL8188EU_REG_MCUFWDL_CHECKSUM_REPORT) != 0)
+			break;
+
+		u80211_drv_kernel_stall_us(RTL8188EU_FIRMWARE_CHECKSUM_POLL_DELAY_US);
+	}
+
+	if (poll == RTL8188EU_FIRMWARE_MAX_POLLS) {
+		u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: firmware checksum timed out");
+		return U80211_DRV_STATUS_TIMEOUT;
+	}
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: firmware checksum ready");
+
+	// leave firmware download mode
+	uint8_t value8;
+	status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, &value8);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	value8 &= ~U80211_DRV_RTL8188EU_REG_MCUFWDL_ENABLE;
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, value8);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_MCUFWDL + 1, 0);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// mark the downloaded image ready and discard stale firmware state
+	status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, &value32);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	value32 &= ~U80211_DRV_RTL8188EU_REG_MCUFWDL_WINTINI_READY;
+	value32 |= U80211_DRV_RTL8188EU_REG_MCUFWDL_READY;
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, value32);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = firmware_reset(device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: waiting for firmware ready");
+	for (poll = 0; poll < RTL8188EU_FIRMWARE_MAX_POLLS; ++poll) {
+		status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, &value32);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+
+		if ((value32 & U80211_DRV_RTL8188EU_REG_MCUFWDL_WINTINI_READY) != 0) {
+			u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: firmware ready");
+			return U80211_DRV_STATUS_SUCCESS;
+		}
+
+		u80211_drv_kernel_stall_us(RTL8188EU_FIRMWARE_READY_POLL_DELAY_US);
+	}
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: firmware ready timed out");
+	return U80211_DRV_STATUS_TIMEOUT;
 }

@@ -77,6 +77,8 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;
 
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: uploading firmware");
+
 	// upload the firmware into the MCU
 	const uint8_t *firmware_payload;
 	size_t firmware_payload_size;
@@ -94,8 +96,13 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;
 
-	return;
+	status = u80211_drv_rtl8188eu_firmware_start(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
 
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: firmware initialized");
+
+	return;
 error:
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");
 }

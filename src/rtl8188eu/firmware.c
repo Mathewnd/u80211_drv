@@ -5,7 +5,9 @@
 #include <u80211_drv/status.h>
 
 #define RTL8188EU_FIRMWARE_SIGNATURE  0x88e
-#define TL8188EU_FIRMWARE_PREPARE_DELAY_US  50
+#define RTL8188EU_FIRMWARE_PREPARE_DELAY_US  50
+#define RTL8188EU_FIRMWARE_WRITE_SIZE  196
+#define RTL8188EU_FIRMWARE_PAGE_COUNT  8
 
 static int firmware_reset(u80211_drv_device_handle_t device) {
 	// hold mcu wrapper
@@ -129,5 +131,60 @@ int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, con
 	u80211_drv_kernel_stall_us(RTL8188EU_FIRMWARE_PREPARE_DELAY_US);
 	*firmware_payload = payload;
 	*firmware_payload_size = payload_size;
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
+static int firmware_write_page(u80211_drv_device_handle_t device, unsigned int page, const uint8_t *data, size_t size) {
+	// set the page selector
+	uint32_t value;
+	int status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, &value);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	value &= ~U80211_DRV_RTL8188EU_REG_MCUFWDL_PAGE_MASK;
+	value |= (uint32_t)page << 16;
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_MCUFWDL, value);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// write firmware in 196-byte chunks.
+	// this is actually needed because some chips apparently have issues
+	// with different-sized writes: https://github.com/a5a5aa555oo/rtl8xxxu/issues/2
+	uint16_t address = U80211_DRV_RTL8188EU_FIRMWARE_START_ADDRESS;
+	while (size >= RTL8188EU_FIRMWARE_WRITE_SIZE) {
+		status = u80211_drv_rtl8188eu_reg_write_region(device, address, data, RTL8188EU_FIRMWARE_WRITE_SIZE);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+
+		address += RTL8188EU_FIRMWARE_WRITE_SIZE;
+		data += RTL8188EU_FIRMWARE_WRITE_SIZE;
+		size -= RTL8188EU_FIRMWARE_WRITE_SIZE;
+	}
+
+	if (size != 0)
+		return u80211_drv_rtl8188eu_reg_write_region(device, address, data, (uint16_t)size);
+
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size) {
+	if (firmware_payload_size > U80211_DRV_RTL8188EU_FIRMWARE_PAGE_SIZE * RTL8188EU_FIRMWARE_PAGE_COUNT)
+		return U80211_DRV_STATUS_INVALID_ARGUMENT;
+
+	unsigned int page = 0;
+	while (firmware_payload_size != 0) {
+		size_t page_size = firmware_payload_size;
+		if (page_size > U80211_DRV_RTL8188EU_FIRMWARE_PAGE_SIZE)
+			page_size = U80211_DRV_RTL8188EU_FIRMWARE_PAGE_SIZE;
+
+		int status = firmware_write_page(device, page, firmware_payload, page_size);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+
+		firmware_payload += page_size;
+		firmware_payload_size -= page_size;
+		++page;
+	}
+
 	return U80211_DRV_STATUS_SUCCESS;
 }

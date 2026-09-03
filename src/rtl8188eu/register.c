@@ -78,3 +78,7 @@ int u80211_drv_rtl8188eu_reg_write32(u80211_drv_device_handle_t device, uint16_t
 	uint32_t little_endian_value = u80211_drv_host_to_le32(value);
 	return reg_xfer(device, REALTEK_USB_WRITE, reg, &little_endian_value, sizeof(little_endian_value));
 }
+
+int u80211_drv_rtl8188eu_reg_write_region(u80211_drv_device_handle_t device, uint16_t reg, const void *data, uint16_t size) {
+	return reg_xfer(device, REALTEK_USB_WRITE, reg, (void *)data, size);
+}

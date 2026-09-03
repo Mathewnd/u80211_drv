@@ -90,8 +90,10 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;
 
-	(void)firmware_payload;
-	(void)firmware_payload_size;
+	status = u80211_drv_rtl8188eu_firmware_upload(rtl8188eu->device, firmware_payload, firmware_payload_size);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
 	return;
 
 error:

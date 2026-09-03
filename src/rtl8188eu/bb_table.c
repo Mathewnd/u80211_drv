@@ -156,6 +156,40 @@ int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device) {
 	);
 }
 
+int u80211_drv_rtl8188eu_bb_enable_datapaths(u80211_drv_device_handle_t device) {
+	// enable cck datapath
+	uint32_t rfmod;
+	int status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD, &rfmod);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	rfmod |= U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_CCK_ENABLE;
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD, rfmod);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// enable ofdm data path
+	status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD, &rfmod);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	rfmod |= U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_OFDM_ENABLE;
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD, rfmod);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// sanity check
+	status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD, &rfmod);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	uint32_t enable_mask = U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_CCK_ENABLE | U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_OFDM_ENABLE;
+	if ((rfmod & enable_mask) != enable_mask)
+		return U80211_DRV_STATUS_FAULTY_HARDWARE;
+
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device) {
 	for (size_t i = 0; i < ARRAY_SIZE(rtl8188eu_bb_regs); ++i) {
 		int status = u80211_drv_rtl8188eu_reg_write32(device, rtl8188eu_bb_regs[i], rtl8188eu_bb_values[i]);

@@ -66,7 +66,6 @@ int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t devi
 }
 
 int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device) {
-	// TODO: I have no idea what this value actually means. magic value go brrrrr!
 	uint16_t reg = U80211_DRV_RTL8188EU_REG_TRXFF_BNDY + 2;
 	int status = u80211_drv_rtl8188eu_reg_write16(device, reg, U80211_DRV_RTL8188EU_RX_FIFO_BOUNDARY);
 	if (status != U80211_DRV_STATUS_SUCCESS)
@@ -81,4 +80,23 @@ int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle
 		return U80211_DRV_STATUS_FAULTY_HARDWARE;
 
 	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_rtl8188eu_mac_configure_packet_buffer(u80211_drv_device_handle_t device) {
+	uint8_t boundary = U80211_DRV_RTL8188EU_TX_TOTAL_PAGE_NUM + 1;
+	const uint16_t boundary_regs[] = {
+		U80211_DRV_RTL8188EU_REG_TXPKTBUF_BCNQ_BDNY,
+		U80211_DRV_RTL8188EU_REG_TXPKTBUF_MGQ_BDNY,
+		U80211_DRV_RTL8188EU_REG_TXPKTBUF_WMAC_LBK_BF_HD,
+		U80211_DRV_RTL8188EU_REG_TRXFF_BNDY,
+		U80211_DRV_RTL8188EU_REG_TDECTRL + 1,
+	};
+
+	for (size_t i = 0; i < sizeof(boundary_regs) / sizeof(boundary_regs[0]); ++i) {
+		int status = u80211_drv_rtl8188eu_reg_write8(device, boundary_regs[i], boundary);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+	}
+
+	return u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_PBP, U80211_DRV_RTL8188EU_REG_PBP_128_BYTES);
 }

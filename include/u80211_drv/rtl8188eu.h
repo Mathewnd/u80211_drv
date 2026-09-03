@@ -94,6 +94,9 @@
 #define U80211_DRV_RTL8188EU_REG_CR_SECURITY_ENABLE (1u << 9)
 #define U80211_DRV_RTL8188EU_REG_CR_CALTIMER_ENABLE (1u << 10)
 
+#define U80211_DRV_RTL8188EU_REG_PBP 0x0104
+#define U80211_DRV_RTL8188EU_REG_PBP_128_BYTES 0x11
+
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL 0x010c
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_VO_SHIFT 4
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_VI_SHIFT 6
@@ -114,6 +117,12 @@
 
 #define U80211_DRV_RTL8188EU_REG_RQPN_NPQ 0x0214
 #define U80211_DRV_RTL8188EU_REG_RQPN_NPQ_SHIFT 0
+
+#define U80211_DRV_RTL8188EU_REG_TDECTRL 0x0208
+
+#define U80211_DRV_RTL8188EU_REG_TXPKTBUF_BCNQ_BDNY 0x0424
+#define U80211_DRV_RTL8188EU_REG_TXPKTBUF_MGQ_BDNY 0x0425
+#define U80211_DRV_RTL8188EU_REG_TXPKTBUF_WMAC_LBK_BF_HD 0x045d
 
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM 0x04ca
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM_8188EU 0x07
@@ -176,6 +185,7 @@ int u80211_drv_rtl8188eu_power_active(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t device, uint8_t bulk_out_endpoint_count);
 int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_mac_configure_packet_buffer(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);

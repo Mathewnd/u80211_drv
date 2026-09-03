@@ -132,6 +132,7 @@
 
 #define U80211_DRV_RTL8188EU_REG_FWHW_TXQ_CTRL 0x0420
 #define U80211_DRV_RTL8188EU_REG_FWHW_TXQ_CTRL_AMPDU_RTY_NEW (1u << 7)
+#define U80211_DRV_RTL8188EU_REG_HWSEQ_CTRL 0x0423
 
 #define U80211_DRV_RTL8188EU_REG_SPEC_SIFS 0x0428
 #define U80211_DRV_RTL8188EU_REG_RL 0x042a
@@ -183,9 +184,25 @@
 #define U80211_DRV_RTL8188EU_REG_RESP_SIFS_OFDM 0x063e
 #define U80211_DRV_RTL8188EU_REG_ACKTO 0x0640
 
+#define U80211_DRV_RTL8188EU_REG_CAMCMD 0x0670
+#define U80211_DRV_RTL8188EU_REG_CAMCMD_CLR (1u << 30)
+#define U80211_DRV_RTL8188EU_REG_CAMCMD_POLLING (1u << 31)
+
+#define U80211_DRV_RTL8188EU_REG_SECCFG 0x0680
+#define U80211_DRV_RTL8188EU_REG_SECCFG_TXUCKEY_DEF (1u << 0)
+#define U80211_DRV_RTL8188EU_REG_SECCFG_RXUCKEY_DEF (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_SECCFG_TXENC_ENABLE (1u << 2)
+#define U80211_DRV_RTL8188EU_REG_SECCFG_RXENC_ENABLE (1u << 3)
+#define U80211_DRV_RTL8188EU_REG_SECCFG_TXBCKEY_DEF (1u << 6)
+#define U80211_DRV_RTL8188EU_REG_SECCFG_RXBCKEY_DEF (1u << 7)
+
 #define U80211_DRV_RTL8188EU_REG_RXFLTMAP0 0x06a0
 #define U80211_DRV_RTL8188EU_REG_RXFLTMAP1 0x06a2
 #define U80211_DRV_RTL8188EU_REG_RXFLTMAP2 0x06a4
+
+#define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD 0x0800
+#define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_CCK_ENABLE (1u << 24)
+#define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_OFDM_ENABLE (1u << 25)
 
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A 0x0824
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_CCK_HIGH_POWER (1u << 9)
@@ -270,8 +287,10 @@ int u80211_drv_rtl8188eu_mac_initialize_llt(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_wmac(u80211_drv_rtl8188eu_t *rtl8188eu);
 int u80211_drv_rtl8188eu_mac_set_edca(u80211_drv_device_handle_t device, u80211_drv_rtl8188eu_access_category_t access_category, u80211_drv_rtl8188eu_edca_params_t params);
 int u80211_drv_rtl8188eu_mac_configure_timing(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_mac_configure_hardware_offloads(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_bb_enable_datapaths(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8188eu);

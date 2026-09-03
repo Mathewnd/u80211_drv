@@ -172,6 +172,18 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: timing configured");
 
+	status = u80211_drv_rtl8188eu_bb_enable_datapaths(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: BB datapaths enabled");
+
+	status = u80211_drv_rtl8188eu_mac_configure_hardware_offloads(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: hardware offloads configured");
+
 	return;
 error:
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");

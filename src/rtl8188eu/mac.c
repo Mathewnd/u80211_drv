@@ -362,3 +362,24 @@ int u80211_drv_rtl8188eu_mac_configure_timing(u80211_drv_device_handle_t device)
 
 	return u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_BCNTCFG, 0x660f);
 }
+
+int u80211_drv_rtl8188eu_mac_configure_hardware_offloads(u80211_drv_device_handle_t device) {
+	// configure encryption offload
+	uint32_t cam_command = U80211_DRV_RTL8188EU_REG_CAMCMD_CLR | U80211_DRV_RTL8188EU_REG_CAMCMD_POLLING;
+	int status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_CAMCMD, cam_command);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	uint16_t security_config = U80211_DRV_RTL8188EU_REG_SECCFG_TXUCKEY_DEF |
+		U80211_DRV_RTL8188EU_REG_SECCFG_RXUCKEY_DEF |
+		U80211_DRV_RTL8188EU_REG_SECCFG_TXENC_ENABLE |
+		U80211_DRV_RTL8188EU_REG_SECCFG_RXENC_ENABLE |
+		U80211_DRV_RTL8188EU_REG_SECCFG_TXBCKEY_DEF |
+		U80211_DRV_RTL8188EU_REG_SECCFG_RXBCKEY_DEF;
+	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_SECCFG, security_config);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// configure sequence handling offload
+	return u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_HWSEQ_CTRL, UINT8_MAX);
+}

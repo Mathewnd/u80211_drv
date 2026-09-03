@@ -68,6 +68,10 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;
 
+	status = u80211_drv_rtl8188eu_mac_configure_tx_queues(rtl8188eu->device, rtl8188eu->bulk_out_endpoint_count);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
 	(void)firmware_data;
 	(void)firmware_size;
 	return;

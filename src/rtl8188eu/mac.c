@@ -267,3 +267,98 @@ int u80211_drv_rtl8188eu_mac_configure_wmac(u80211_drv_rtl8188eu_t *rtl8188eu) {
 
 	return u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_RXFLTMAP2, UINT16_MAX);
 }
+
+int u80211_drv_rtl8188eu_mac_set_edca(u80211_drv_device_handle_t device, u80211_drv_rtl8188eu_access_category_t access_category, u80211_drv_rtl8188eu_edca_params_t params) {
+	uint16_t reg;
+	switch (access_category) {
+		case U80211_DRV_RTL8188EU_ACCESS_CATEGORY_VO:
+			reg = U80211_DRV_RTL8188EU_REG_EDCA_VO;
+			break;
+		case U80211_DRV_RTL8188EU_ACCESS_CATEGORY_VI:
+			reg = U80211_DRV_RTL8188EU_REG_EDCA_VI;
+			break;
+		case U80211_DRV_RTL8188EU_ACCESS_CATEGORY_BE:
+			reg = U80211_DRV_RTL8188EU_REG_EDCA_BE;
+			break;
+		case U80211_DRV_RTL8188EU_ACCESS_CATEGORY_BK:
+			reg = U80211_DRV_RTL8188EU_REG_EDCA_BK;
+			break;
+		default:
+			return U80211_DRV_STATUS_INVALID_ARGUMENT;
+	}
+
+	unsigned int aifs = params.aifsn * params.slot_time + 10;
+	if (params.ecwmin > 0x0f || params.ecwmax > 0x0f || aifs > UINT8_MAX)
+		return U80211_DRV_STATUS_INVALID_ARGUMENT;
+
+	uint32_t value = ((uint32_t)params.txop << 16) | ((uint32_t)params.ecwmax << 12) | ((uint32_t)params.ecwmin << 8) | aifs;
+	return u80211_drv_rtl8188eu_reg_write32(device, reg, value);
+}
+
+int u80211_drv_rtl8188eu_mac_configure_timing(u80211_drv_device_handle_t device) {
+	// set fallback response rate to 1mbps using cck
+	uint32_t rrsr;
+	int status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_RRSR, &rrsr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	rrsr = (rrsr & ~U80211_DRV_RTL8188EU_REG_RRSR_RATE_MASK) | U80211_DRV_RTL8188EU_REG_RRSR_RATE_CCK_ONLY_1M;
+	status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_RRSR, rrsr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// set retry limits to 48 retries
+	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_RL, 0x3030);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// configure SIFS
+	const uint16_t sifs_regs[] = {
+		U80211_DRV_RTL8188EU_REG_SPEC_SIFS,
+		U80211_DRV_RTL8188EU_REG_SIFS_CCK,
+		U80211_DRV_RTL8188EU_REG_SIFS_OFDM,
+		U80211_DRV_RTL8188EU_REG_MAC_SPEC_SIFS,
+		U80211_DRV_RTL8188EU_REG_RESP_SIFS_CCK,
+		U80211_DRV_RTL8188EU_REG_RESP_SIFS_OFDM,
+	};
+	for (size_t i = 0; i < sizeof(sifs_regs) / sizeof(sifs_regs[0]); ++i) {
+		status = u80211_drv_rtl8188eu_reg_write16(device, sifs_regs[i], 0x100a);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+	}
+
+	// use AMPDU new retry mechanism
+	uint8_t txq_ctrl;
+	status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_FWHW_TXQ_CTRL, &txq_ctrl);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	txq_ctrl |= U80211_DRV_RTL8188EU_REG_FWHW_TXQ_CTRL_AMPDU_RTY_NEW;
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_FWHW_TXQ_CTRL, txq_ctrl);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// set ack timeout to 64 microseconds
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_ACKTO, 0x40);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// initialize beacon packet machinery
+	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_BCN_CTRL, 0x1010);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_TBTT_PROHIBIT, 0x6404);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_DRVERLYINT, 0x05);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_BCNDMATIM, 0x02);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	return u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_BCNTCFG, 0x660f);
+}

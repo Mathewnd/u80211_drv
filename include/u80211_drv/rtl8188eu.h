@@ -130,12 +130,36 @@
 
 #define U80211_DRV_RTL8188EU_REG_TDECTRL 0x0208
 
+#define U80211_DRV_RTL8188EU_REG_FWHW_TXQ_CTRL 0x0420
+#define U80211_DRV_RTL8188EU_REG_FWHW_TXQ_CTRL_AMPDU_RTY_NEW (1u << 7)
+
+#define U80211_DRV_RTL8188EU_REG_SPEC_SIFS 0x0428
+#define U80211_DRV_RTL8188EU_REG_RL 0x042a
+
+#define U80211_DRV_RTL8188EU_REG_RRSR 0x0440
+#define U80211_DRV_RTL8188EU_REG_RRSR_RATE_MASK 0x000fffff
+#define U80211_DRV_RTL8188EU_REG_RRSR_RATE_CCK_ONLY_1M 0x000ffff1
+
 #define U80211_DRV_RTL8188EU_REG_TXPKTBUF_BCNQ_BDNY 0x0424
 #define U80211_DRV_RTL8188EU_REG_TXPKTBUF_MGQ_BDNY 0x0425
 #define U80211_DRV_RTL8188EU_REG_TXPKTBUF_WMAC_LBK_BF_HD 0x045d
 
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM 0x04ca
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM_8188EU 0x07
+
+#define U80211_DRV_RTL8188EU_REG_EDCA_VO 0x0500
+#define U80211_DRV_RTL8188EU_REG_EDCA_VI 0x0504
+#define U80211_DRV_RTL8188EU_REG_EDCA_BE 0x0508
+#define U80211_DRV_RTL8188EU_REG_EDCA_BK 0x050c
+
+#define U80211_DRV_RTL8188EU_REG_BCNTCFG 0x0510
+#define U80211_DRV_RTL8188EU_REG_SIFS_CCK 0x0514
+#define U80211_DRV_RTL8188EU_REG_SIFS_OFDM 0x0516
+
+#define U80211_DRV_RTL8188EU_REG_TBTT_PROHIBIT 0x0540
+#define U80211_DRV_RTL8188EU_REG_BCN_CTRL 0x0550
+#define U80211_DRV_RTL8188EU_REG_DRVERLYINT 0x0558
+#define U80211_DRV_RTL8188EU_REG_BCNDMATIM 0x0559
 
 #define U80211_DRV_RTL8188EU_REG_RCR 0x0608
 #define U80211_DRV_RTL8188EU_REG_RCR_AAP (1u << 0)
@@ -153,6 +177,11 @@
 
 #define U80211_DRV_RTL8188EU_REG_MACID 0x0610
 #define U80211_DRV_RTL8188EU_REG_MAR 0x0620
+
+#define U80211_DRV_RTL8188EU_REG_MAC_SPEC_SIFS 0x063a
+#define U80211_DRV_RTL8188EU_REG_RESP_SIFS_CCK 0x063c
+#define U80211_DRV_RTL8188EU_REG_RESP_SIFS_OFDM 0x063e
+#define U80211_DRV_RTL8188EU_REG_ACKTO 0x0640
 
 #define U80211_DRV_RTL8188EU_REG_RXFLTMAP0 0x06a0
 #define U80211_DRV_RTL8188EU_REG_RXFLTMAP1 0x06a2
@@ -192,6 +221,21 @@
 #define U80211_DRV_RTL8188EU_TRXDMA_QUEUE_NORMAL 2
 #define U80211_DRV_RTL8188EU_TRXDMA_QUEUE_HIGH 3
 
+typedef enum {
+	U80211_DRV_RTL8188EU_ACCESS_CATEGORY_VO,
+	U80211_DRV_RTL8188EU_ACCESS_CATEGORY_VI,
+	U80211_DRV_RTL8188EU_ACCESS_CATEGORY_BE,
+	U80211_DRV_RTL8188EU_ACCESS_CATEGORY_BK,
+} u80211_drv_rtl8188eu_access_category_t;
+
+typedef struct {
+	uint8_t aifsn;
+	uint8_t ecwmin;
+	uint8_t ecwmax;
+	uint16_t txop;
+	uint8_t slot_time;
+} u80211_drv_rtl8188eu_edca_params_t;
+
 typedef struct {
 	uint16_t rtl_id;
 	uint8_t mac_address[U80211_DRV_RTL8188EU_MAC_ADDRESS_LEN];
@@ -224,6 +268,8 @@ int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle
 int u80211_drv_rtl8188eu_mac_configure_packet_buffer(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_initialize_llt(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_wmac(u80211_drv_rtl8188eu_t *rtl8188eu);
+int u80211_drv_rtl8188eu_mac_set_edca(u80211_drv_device_handle_t device, u80211_drv_rtl8188eu_access_category_t access_category, u80211_drv_rtl8188eu_edca_params_t params);
+int u80211_drv_rtl8188eu_mac_configure_timing(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);

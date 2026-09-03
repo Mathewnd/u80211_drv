@@ -3,6 +3,9 @@
 #include <u80211_drv/rtl8188eu.h>
 #include <u80211_drv/status.h>
 
+#define RTL8188EU_LLT_MAX_POLLS 20
+#define RTL8188EU_LLT_POLL_DELAY_US 5
+
 int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t device) {
 	// explicitly leave the RX and TX engines disabled.
 	uint16_t cr = U80211_DRV_RTL8188EU_REG_CR_HCI_TXDMA_ENABLE |
@@ -99,4 +102,50 @@ int u80211_drv_rtl8188eu_mac_configure_packet_buffer(u80211_drv_device_handle_t 
 	}
 
 	return u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_PBP, U80211_DRV_RTL8188EU_REG_PBP_128_BYTES);
+}
+
+static int rtl8188eu_llt_write(u80211_drv_device_handle_t device, uint8_t address, uint8_t data) {
+	// write the LLT entry
+	uint32_t command = U80211_DRV_RTL8188EU_REG_LLT_INIT_OP_WRITE |  ((uint32_t)address << 8) | data;
+	int status = u80211_drv_rtl8188eu_reg_write32(device, U80211_DRV_RTL8188EU_REG_LLT_INIT, command);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// wait for the write operation to complete
+	for (unsigned int poll = 0; poll < RTL8188EU_LLT_MAX_POLLS; ++poll) {
+		uint32_t value;
+		status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_LLT_INIT, &value);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+
+		if ((value & U80211_DRV_RTL8188EU_REG_LLT_INIT_OP_MASK) == 0)
+			return U80211_DRV_STATUS_SUCCESS;
+
+		u80211_drv_kernel_stall_us(RTL8188EU_LLT_POLL_DELAY_US);
+	}
+
+	return U80211_DRV_STATUS_TIMEOUT;
+}
+
+int u80211_drv_rtl8188eu_mac_initialize_llt(u80211_drv_device_handle_t device) {
+	// write the linear tx page list
+	for (unsigned int entry = 0; entry < U80211_DRV_RTL8188EU_TX_TOTAL_PAGE_NUM; ++entry) {
+		int status = rtl8188eu_llt_write(device, (uint8_t)entry, (uint8_t)(entry + 1));
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+	}
+
+	int status = rtl8188eu_llt_write(device, U80211_DRV_RTL8188EU_TX_TOTAL_PAGE_NUM, U80211_DRV_RTL8188EU_LLT_END);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	// write the cyclic pages
+	uint8_t first_remaining_page = U80211_DRV_RTL8188EU_TX_TOTAL_PAGE_NUM + 1;
+	for (unsigned int entry = first_remaining_page; entry < U80211_DRV_RTL8188EU_LLT_LAST_ENTRY; ++entry) {
+		status = rtl8188eu_llt_write(device, (uint8_t)entry, (uint8_t)(entry + 1));
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+	}
+
+	return rtl8188eu_llt_write(device, U80211_DRV_RTL8188EU_LLT_LAST_ENTRY, first_remaining_page);
 }

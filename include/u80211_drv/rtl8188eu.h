@@ -109,6 +109,12 @@
 #define U80211_DRV_RTL8188EU_REG_TRXFF_BNDY 0x0114
 #define U80211_DRV_RTL8188EU_RX_FIFO_BOUNDARY 0x25ff
 
+#define U80211_DRV_RTL8188EU_REG_LLT_INIT 0x01e0
+#define U80211_DRV_RTL8188EU_REG_LLT_INIT_OP_WRITE (1u << 30)
+#define U80211_DRV_RTL8188EU_REG_LLT_INIT_OP_MASK (3u << 30)
+#define U80211_DRV_RTL8188EU_LLT_LAST_ENTRY 0xaf
+#define U80211_DRV_RTL8188EU_LLT_END 0xff
+
 #define U80211_DRV_RTL8188EU_REG_RQPN 0x0200
 #define U80211_DRV_RTL8188EU_REG_RQPN_HI_SHIFT 0
 #define U80211_DRV_RTL8188EU_REG_RQPN_LO_SHIFT 8
@@ -186,6 +192,7 @@ int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t de
 int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t device, uint8_t bulk_out_endpoint_count);
 int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_packet_buffer(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_mac_initialize_llt(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);

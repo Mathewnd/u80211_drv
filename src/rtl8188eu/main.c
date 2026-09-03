@@ -148,6 +148,12 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: LLT initialized");
 
+	status = u80211_drv_rtl8188eu_mac_enable_tx_rx(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: MAC TX and RX enabled");
+
 	return;
 error:
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");

@@ -20,6 +20,28 @@ int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t de
 	return u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_CR, cr);
 }
 
+int u80211_drv_rtl8188eu_mac_enable_tx_rx(u80211_drv_device_handle_t device) {
+	const uint16_t enable_mask = U80211_DRV_RTL8188EU_REG_CR_MAC_TX_ENABLE | U80211_DRV_RTL8188EU_REG_CR_MAC_RX_ENABLE;
+	uint16_t cr;
+	int status = u80211_drv_rtl8188eu_reg_read16(device, U80211_DRV_RTL8188EU_REG_CR, &cr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	cr |= enable_mask;
+	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_CR, cr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_read16(device, U80211_DRV_RTL8188EU_REG_CR, &cr);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	if ((cr & enable_mask) != enable_mask)
+		return U80211_DRV_STATUS_FAULTY_HARDWARE;
+
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
 static uint16_t tx_queue_mapping(uint8_t bulk_out_endpoint_count) {
 	// map wifi traffic classes onto hardware queues
 	uint16_t vi_queue = bulk_out_endpoint_count >= 2 ? U80211_DRV_RTL8188EU_TRXDMA_QUEUE_NORMAL : U80211_DRV_RTL8188EU_TRXDMA_QUEUE_HIGH;

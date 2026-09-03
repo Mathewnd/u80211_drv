@@ -9,7 +9,16 @@
 #define U80211_DRV_RTL8188EU_REG_SYS_ISO_CTRL_PWC_EV12V (1u << 15)
 
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC 0x0002
+#define U80211_DRV_RTL8188EU_REG_SYS_FUNC_BBRSTB (1u << 0)
+#define U80211_DRV_RTL8188EU_REG_SYS_FUNC_BB_GLB_RSTN (1u << 1)
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_ELDR (1u << 12)
+
+#define U80211_DRV_RTL8188EU_REG_APS_FSMCO 0x0004
+#define U80211_DRV_RTL8188EU_REG_APS_FSMCO_MAC_ENABLE (1u << 8)
+#define U80211_DRV_RTL8188EU_REG_APS_FSMCO_HW_SUSPEND (1u << 11)
+#define U80211_DRV_RTL8188EU_REG_APS_FSMCO_PCIE (1u << 12)
+#define U80211_DRV_RTL8188EU_REG_APS_FSMCO_HW_POWERDOWN (1u << 15)
+#define U80211_DRV_RTL8188EU_REG_APS_FSMCO_POWER_READY (1u << 17)
 
 #define U80211_DRV_RTL8188EU_REG_SYS_CLKR 0x0008
 #define U80211_DRV_RTL8188EU_REG_SYS_CLKR_ANA8M (1u << 1)
@@ -18,6 +27,12 @@
 #define U80211_DRV_RTL8188EU_REG_9346CR 0x000a
 #define U80211_DRV_RTL8188EU_REG_9346CR_EEPROM_BOOT (1u << 4)
 #define U80211_DRV_RTL8188EU_REG_9346CR_EEPROM_ENABLE (1u << 5)
+
+#define U80211_DRV_RTL8188EU_REG_LPLDO_CTRL 0x0023
+#define U80211_DRV_RTL8188EU_REG_LPLDO_CTRL_SLEEP (1u << 4)
+
+#define U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL 0x0024
+#define U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL_SCHMITT_TRIGGER (1u << 23)
 
 #define U80211_DRV_RTL8188EU_REG_EFUSE_CTRL 0x0030
 #define U80211_DRV_RTL8188EU_REG_EFUSE_CTRL_READ_READY (1u << 31)
@@ -56,6 +71,7 @@ int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_efuse_finish(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_read_efuse(u80211_drv_device_handle_t device, uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN]);
 int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN], u80211_drv_rtl8188eu_efuse_t *result);
+int u80211_drv_rtl8188eu_power_active(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_reg_read8(u80211_drv_device_handle_t device, uint16_t reg, uint8_t *value);
 int u80211_drv_rtl8188eu_reg_read16(u80211_drv_device_handle_t device, uint16_t reg, uint16_t *value);
 int u80211_drv_rtl8188eu_reg_read32(u80211_drv_device_handle_t device, uint16_t reg, uint32_t *value);

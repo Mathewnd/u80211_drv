@@ -7,6 +7,8 @@
 typedef void *u80211_drv_device_handle_t;
 typedef void *u80211_drv_interface_handle_t;
 
+typedef void (*u80211_drv_kernel_firmware_callback_t)(void *context, const void *firmware_data, size_t firmware_size);
+
 typedef struct {
 	uint16_t vendor_id;
 	uint16_t product_id;
@@ -50,6 +52,7 @@ typedef struct {
 
 void *u80211_drv_kernel_allocate(size_t size);
 void u80211_drv_kernel_free(void *memory);
+int u80211_drv_kernel_get_firmware(const char *name, u80211_drv_kernel_firmware_callback_t callback, void *context);
 int u80211_drv_kernel_get_device_descriptor(u80211_drv_device_handle_t device, u80211_drv_device_descriptor_t *descriptor);
 int u80211_drv_kernel_get_interface_descriptor(u80211_drv_interface_handle_t interface, u80211_drv_interface_descriptor_t *descriptor);
 int u80211_drv_kernel_get_endpoints(u80211_drv_interface_handle_t interface, u80211_drv_endpoint_descriptor_t *endpoints, size_t endpoint_count);

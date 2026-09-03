@@ -11,4 +11,5 @@ test(
   'test_hardware',
   test_hardware,
   suite: 'integration',
+  workdir: meson.project_source_root(),
 )

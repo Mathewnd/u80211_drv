@@ -4,6 +4,58 @@
 #include <u80211_drv/rtl8188eu.h>
 #include <u80211_drv/status.h>
 
+static int discover_bulk_out_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
+	u80211_drv_interface_descriptor_t interface_descriptor;
+	int status = u80211_drv_kernel_get_interface_descriptor(rtl8188eu->interface, &interface_descriptor);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	if (interface_descriptor.endpoint_count == 0)
+		return U80211_DRV_STATUS_NOT_SUPPORTED;
+
+	u80211_drv_endpoint_descriptor_t *endpoints = u80211_drv_kernel_allocate(interface_descriptor.endpoint_count * sizeof(*endpoints));
+	if (endpoints == NULL)
+		return U80211_DRV_STATUS_OUT_OF_MEMORY;
+
+	status = u80211_drv_kernel_get_endpoints(rtl8188eu->interface, endpoints, interface_descriptor.endpoint_count);
+	if (status != U80211_DRV_STATUS_SUCCESS) {
+		u80211_drv_kernel_free(endpoints);
+		return status;
+	}
+
+	rtl8188eu->bulk_out_endpoint_count = 0;
+	rtl8188eu->tx_endpoint_high = 0;
+	rtl8188eu->tx_endpoint_normal = 0;
+	rtl8188eu->tx_endpoint_low = 0;
+
+	for (uint8_t i = 0; i < interface_descriptor.endpoint_count; ++i) {
+		if ((endpoints[i].address & U80211_DRV_KERNEL_XFER_DIRECTION_MASK) != U80211_DRV_KERNEL_XFER_OUT ||
+				(endpoints[i].attributes & U80211_DRV_KERNEL_ENDPOINT_TRANSFER_TYPE_MASK) != U80211_DRV_KERNEL_ENDPOINT_TRANSFER_TYPE_BULK)
+			continue;
+
+		switch (rtl8188eu->bulk_out_endpoint_count) {
+			case 0:
+				rtl8188eu->tx_endpoint_high = endpoints[i].address;
+				break;
+			case 1:
+				rtl8188eu->tx_endpoint_normal = endpoints[i].address;
+				break;
+			case 2:
+				rtl8188eu->tx_endpoint_low = endpoints[i].address;
+				break;
+		}
+
+		++rtl8188eu->bulk_out_endpoint_count;
+	}
+
+	u80211_drv_kernel_free(endpoints);
+
+	if (rtl8188eu->bulk_out_endpoint_count == 0)
+		return U80211_DRV_STATUS_NOT_SUPPORTED;
+
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
 static void firmware_loaded(void *context, const void *firmware_data, size_t firmware_size) {
 	u80211_drv_rtl8188eu_t *rtl8188eu = context;
 
@@ -41,6 +93,12 @@ int u80211_drv_rtl8188eu_init(u80211_drv_device_handle_t device, u80211_drv_inte
 
 	rtl8188eu->device = device;
 	rtl8188eu->interface = interface;
+
+	status = discover_bulk_out_endpoints(rtl8188eu);
+	if (status != U80211_DRV_STATUS_SUCCESS) {
+		u80211_drv_kernel_free(rtl8188eu);
+		return status;
+	}
 
 	uint8_t *efuse_map = u80211_drv_kernel_allocate(U80211_DRV_RTL8188EU_EFUSE_MAP_LEN);
 	if (efuse_map == NULL) {

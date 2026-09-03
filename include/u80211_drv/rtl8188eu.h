@@ -76,6 +76,10 @@ typedef struct {
 typedef struct {
 	u80211_drv_device_handle_t device;
 	u80211_drv_interface_handle_t interface;
+	uint8_t bulk_out_endpoint_count;
+	uint8_t tx_endpoint_high;
+	uint8_t tx_endpoint_normal;
+	uint8_t tx_endpoint_low;
 	u80211_drv_rtl8188eu_efuse_t efuse;
 } u80211_drv_rtl8188eu_t;
 

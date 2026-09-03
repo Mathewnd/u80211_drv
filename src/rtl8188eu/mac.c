@@ -64,3 +64,21 @@ int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t devi
 	trxdma_ctrl = (trxdma_ctrl & U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_LOW_CONTROL_MASK) | tx_queue_mapping(bulk_out_endpoint_count);
 	return u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL, trxdma_ctrl);
 }
+
+int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device) {
+	// TODO: I have no idea what this value actually means. magic value go brrrrr!
+	uint16_t reg = U80211_DRV_RTL8188EU_REG_TRXFF_BNDY + 2;
+	int status = u80211_drv_rtl8188eu_reg_write16(device, reg, U80211_DRV_RTL8188EU_RX_FIFO_BOUNDARY);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	uint16_t boundary;
+	status = u80211_drv_rtl8188eu_reg_read16(device, reg, &boundary);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	if (boundary != U80211_DRV_RTL8188EU_RX_FIFO_BOUNDARY)
+		return U80211_DRV_STATUS_FAULTY_HARDWARE;
+
+	return U80211_DRV_STATUS_SUCCESS;
+}

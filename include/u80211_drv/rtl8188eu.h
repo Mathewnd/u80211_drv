@@ -74,6 +74,9 @@
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_HI_SHIFT 14
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_LOW_CONTROL_MASK 0x0007
 
+#define U80211_DRV_RTL8188EU_REG_TRXFF_BNDY 0x0114
+#define U80211_DRV_RTL8188EU_RX_FIFO_BOUNDARY 0x25ff
+
 #define U80211_DRV_RTL8188EU_REG_RQPN 0x0200
 #define U80211_DRV_RTL8188EU_REG_RQPN_HI_SHIFT 0
 #define U80211_DRV_RTL8188EU_REG_RQPN_LO_SHIFT 8
@@ -117,6 +120,7 @@ int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188E
 int u80211_drv_rtl8188eu_power_active(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t device, uint8_t bulk_out_endpoint_count);
+int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_reg_read8(u80211_drv_device_handle_t device, uint16_t reg, uint8_t *value);
 int u80211_drv_rtl8188eu_reg_read16(u80211_drv_device_handle_t device, uint16_t reg, uint16_t *value);
 int u80211_drv_rtl8188eu_reg_read32(u80211_drv_device_handle_t device, uint16_t reg, uint32_t *value);

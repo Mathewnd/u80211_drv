@@ -72,6 +72,10 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;
 
+	status = u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
 	(void)firmware_data;
 	(void)firmware_size;
 	return;

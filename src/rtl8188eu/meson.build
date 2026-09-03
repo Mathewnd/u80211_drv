@@ -8,5 +8,6 @@ rtl8188eu_library = static_library(
   'main.c',
   'power.c',
   'register.c',
+  'rf_table.c',
   include_directories: u80211_drv_include,
 )

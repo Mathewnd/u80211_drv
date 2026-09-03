@@ -120,6 +120,19 @@
 
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A 0x0824
 #define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_CCK_HIGH_POWER (1u << 9)
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_ADDRESS_LENGTH (1u << 10)
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_DATA_LENGTH (1u << 11)
+
+#define U80211_DRV_RTL8188EU_REG_LSSI_PARAM_A 0x0840
+#define U80211_DRV_RTL8188EU_REG_LSSI_PARAM_ADDRESS_SHIFT 20
+#define U80211_DRV_RTL8188EU_REG_LSSI_PARAM_DATA_MASK 0x000fffff
+
+#define U80211_DRV_RTL8188EU_REG_RF_IFACE_OE_A 0x0860
+#define U80211_DRV_RTL8188EU_REG_RF_IFACE_OE_RF_ENV (1u << 4)
+#define U80211_DRV_RTL8188EU_REG_RF_IFACE_OE_RF_ENV_ENABLE (1u << 20)
+
+#define U80211_DRV_RTL8188EU_REG_RF_IFACE_SW_A 0x0870
+#define U80211_DRV_RTL8188EU_REG_RF_IFACE_SW_RF_ENV (1u << 4)
 
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1 0x0c50
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_LATCH 0x69553422
@@ -168,6 +181,8 @@ int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8188eu);
+int u80211_drv_rtl8188eu_rf_write(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t value);
+int u80211_drv_rtl8188eu_rf_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_start(u80211_drv_device_handle_t device);

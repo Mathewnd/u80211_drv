@@ -130,6 +130,12 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: EFUSE crystal calibration applied");
 
+	status = u80211_drv_rtl8188eu_rf_load_table(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: RF table initialized");
+
 	return;
 error:
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");

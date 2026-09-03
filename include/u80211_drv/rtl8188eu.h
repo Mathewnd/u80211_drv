@@ -1,6 +1,7 @@
 #ifndef U80211_DRV_RTL8188EU_H
 #define U80211_DRV_RTL8188EU_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <u80211_drv/kernel_interface.h>
@@ -46,6 +47,8 @@
 
 #define U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL 0x0024
 #define U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL_SCHMITT_TRIGGER (1u << 23)
+#define U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL_ADDRESS_MASK 0x007ff800
+#define U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL_ADDRESS_SHIFT 11
 
 #define U80211_DRV_RTL8188EU_REG_EFUSE_CTRL 0x0030
 #define U80211_DRV_RTL8188EU_REG_EFUSE_CTRL_READ_READY (1u << 31)
@@ -115,6 +118,9 @@
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM 0x04ca
 #define U80211_DRV_RTL8188EU_REG_MAX_AGGR_NUM_8188EU 0x07
 
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A 0x0824
+#define U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_CCK_HIGH_POWER (1u << 9)
+
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1 0x0c50
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_LATCH 0x69553422
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_FINAL 0x69553420
@@ -145,6 +151,7 @@ typedef struct {
 	uint8_t tx_endpoint_high;
 	uint8_t tx_endpoint_normal;
 	uint8_t tx_endpoint_low;
+	bool cck_high_power;
 	u80211_drv_rtl8188eu_efuse_t efuse;
 } u80211_drv_rtl8188eu_t;
 
@@ -160,6 +167,7 @@ int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8188eu);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_start(u80211_drv_device_handle_t device);

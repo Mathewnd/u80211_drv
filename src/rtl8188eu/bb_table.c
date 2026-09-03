@@ -194,3 +194,25 @@ int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device) {
 	u80211_drv_kernel_stall_us(1);
 	return U80211_DRV_STATUS_SUCCESS;
 }
+
+int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8188eu) {
+	uint32_t value;
+	int status = u80211_drv_rtl8188eu_reg_read32(rtl8188eu->device, U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL, &value);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	uint32_t crystal_cap = rtl8188eu->efuse.xtal_k;
+	uint32_t crystal_field = crystal_cap | (crystal_cap << 6);
+	value &= ~U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL_ADDRESS_MASK;
+	value |= (crystal_field << U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL_ADDRESS_SHIFT) & U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL_ADDRESS_MASK;
+	status = u80211_drv_rtl8188eu_reg_write32(rtl8188eu->device, U80211_DRV_RTL8188EU_REG_AFE_XTAL_CTRL, value);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_read32(rtl8188eu->device, U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_A, &value);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	rtl8188eu->cck_high_power = (value & U80211_DRV_RTL8188EU_REG_HSSI_PARAM2_CCK_HIGH_POWER) != 0;
+	return U80211_DRV_STATUS_SUCCESS;
+}

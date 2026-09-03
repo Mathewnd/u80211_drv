@@ -11,8 +11,11 @@
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC 0x0002
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_BBRSTB (1u << 0)
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_BB_GLB_RSTN (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_SYS_FUNC_USBA (1u << 2)
+#define U80211_DRV_RTL8188EU_REG_SYS_FUNC_USBD (1u << 4)
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_CPUEN (1u << 10)
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_ELDR (1u << 12)
+#define U80211_DRV_RTL8188EU_REG_SYS_FUNC_DIO_RF (1u << 13)
 
 #define U80211_DRV_RTL8188EU_REG_APS_FSMCO 0x0004
 #define U80211_DRV_RTL8188EU_REG_APS_FSMCO_MAC_ENABLE (1u << 8)
@@ -32,6 +35,11 @@
 #define U80211_DRV_RTL8188EU_REG_RSV_CTRL 0x001c
 #define U80211_DRV_RTL8188EU_REG_RSV_CTRL_WLOCK_00 (1u << 1)
 #define U80211_DRV_RTL8188EU_REG_RSV_CTRL_MCU_RST (1u << 11)
+
+#define U80211_DRV_RTL8188EU_REG_RF_CTRL 0x001f
+#define U80211_DRV_RTL8188EU_REG_RF_CTRL_ENABLE (1u << 0)
+#define U80211_DRV_RTL8188EU_REG_RF_CTRL_RSTB (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_RF_CTRL_SDMRSTB (1u << 2)
 
 #define U80211_DRV_RTL8188EU_REG_LPLDO_CTRL 0x0023
 #define U80211_DRV_RTL8188EU_REG_LPLDO_CTRL_SLEEP (1u << 4)
@@ -143,6 +151,8 @@ int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t de
 int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t device, uint8_t bulk_out_endpoint_count);
 int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_start(u80211_drv_device_handle_t device);

@@ -58,6 +58,7 @@ static int discover_bulk_out_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
 
 static void firmware_loaded(void *context, const void *firmware_data, size_t firmware_size) {
 	u80211_drv_rtl8188eu_t *rtl8188eu = context;
+	// the firmware is now in memory, we can continue initializing the chip.
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: found rtl8188eufw.bin");
 	int status = u80211_drv_rtl8188eu_power_active(rtl8188eu->device);
@@ -76,8 +77,21 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;
 
-	(void)firmware_data;
-	(void)firmware_size;
+	// upload the firmware into the MCU
+	const uint8_t *firmware_payload;
+	size_t firmware_payload_size;
+	status = u80211_drv_rtl8188eu_firmware_prepare(
+		rtl8188eu->device,
+		firmware_data,
+		firmware_size,
+		&firmware_payload,
+		&firmware_payload_size
+	);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	(void)firmware_payload;
+	(void)firmware_payload_size;
 	return;
 
 error:
@@ -88,6 +102,7 @@ int u80211_drv_rtl8188eu_init(u80211_drv_device_handle_t device, u80211_drv_inte
 	uint32_t sys_cfg;
 	int status;
 
+	// some cuts are not supported by this driver, check if we are attaching one of them
 	status = u80211_drv_rtl8188eu_reg_read32(device, U80211_DRV_RTL8188EU_REG_SYS_CFG, &sys_cfg);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		return status;
@@ -102,12 +117,14 @@ int u80211_drv_rtl8188eu_init(u80211_drv_device_handle_t device, u80211_drv_inte
 	rtl8188eu->device = device;
 	rtl8188eu->interface = interface;
 
+	// this is nescessary to do now to properly set up the TX queues later
 	status = discover_bulk_out_endpoints(rtl8188eu);
 	if (status != U80211_DRV_STATUS_SUCCESS) {
 		u80211_drv_kernel_free(rtl8188eu);
 		return status;
 	}
 
+	// read efuses to get information like the MAC address
 	uint8_t *efuse_map = u80211_drv_kernel_allocate(U80211_DRV_RTL8188EU_EFUSE_MAP_LEN);
 	if (efuse_map == NULL) {
 		u80211_drv_kernel_free(rtl8188eu);
@@ -144,6 +161,7 @@ int u80211_drv_rtl8188eu_init(u80211_drv_device_handle_t device, u80211_drv_inte
 
 	u80211_drv_kernel_free(efuse_map);
 
+	// wait until firmware gets loaded from disk by the kernel
 	// TODO: have a way of cancelling this wait for detach
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: waiting for rtl8188eufw.bin");
 	status = u80211_drv_kernel_get_firmware("rtl8188eufw.bin", firmware_loaded, rtl8188eu);

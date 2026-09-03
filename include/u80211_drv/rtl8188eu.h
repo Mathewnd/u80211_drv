@@ -11,6 +11,7 @@
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC 0x0002
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_BBRSTB (1u << 0)
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_BB_GLB_RSTN (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_SYS_FUNC_CPUEN (1u << 10)
 #define U80211_DRV_RTL8188EU_REG_SYS_FUNC_ELDR (1u << 12)
 
 #define U80211_DRV_RTL8188EU_REG_APS_FSMCO 0x0004
@@ -28,6 +29,10 @@
 #define U80211_DRV_RTL8188EU_REG_9346CR_EEPROM_BOOT (1u << 4)
 #define U80211_DRV_RTL8188EU_REG_9346CR_EEPROM_ENABLE (1u << 5)
 
+#define U80211_DRV_RTL8188EU_REG_RSV_CTRL 0x001c
+#define U80211_DRV_RTL8188EU_REG_RSV_CTRL_WLOCK_00 (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_RSV_CTRL_MCU_RST (1u << 11)
+
 #define U80211_DRV_RTL8188EU_REG_LPLDO_CTRL 0x0023
 #define U80211_DRV_RTL8188EU_REG_LPLDO_CTRL_SLEEP (1u << 4)
 
@@ -40,6 +45,19 @@
 #define U80211_DRV_RTL8188EU_REG_EFUSE_ACCESS 0x00cf
 #define U80211_DRV_RTL8188EU_EFUSE_ACCESS_ENABLE 0x69
 #define U80211_DRV_RTL8188EU_EFUSE_ACCESS_DISABLE 0x00
+
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL 0x0080
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL_ENABLE (1u << 0)
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL_READY (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL_CHECKSUM_REPORT (1u << 2)
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL_WINTINI_READY (1u << 6)
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL_RAM_DOWNLOAD_SELECT (1u << 7)
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL_PAGE_MASK (7u << 16)
+#define U80211_DRV_RTL8188EU_REG_MCUFWDL_ROM_DOWNLOAD_LENGTH (1u << 19)
+
+#define U80211_DRV_RTL8188EU_FIRMWARE_START_ADDRESS 0x1000
+#define U80211_DRV_RTL8188EU_FIRMWARE_PAGE_SIZE 4096
+#define U80211_DRV_RTL8188EU_FIRMWARE_HEADER_SIZE 32
 
 #define U80211_DRV_RTL8188EU_EFUSE_PHYSICAL_LEN 512
 #define U80211_DRV_RTL8188EU_EFUSE_MAP_LEN 512
@@ -121,6 +139,7 @@ int u80211_drv_rtl8188eu_power_active(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t device, uint8_t bulk_out_endpoint_count);
 int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_reg_read8(u80211_drv_device_handle_t device, uint16_t reg, uint8_t *value);
 int u80211_drv_rtl8188eu_reg_read16(u80211_drv_device_handle_t device, uint16_t reg, uint16_t *value);
 int u80211_drv_rtl8188eu_reg_read32(u80211_drv_device_handle_t device, uint16_t reg, uint32_t *value);

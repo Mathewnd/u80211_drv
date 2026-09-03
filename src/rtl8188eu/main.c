@@ -154,6 +154,12 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: MAC TX and RX enabled");
 
+	status = u80211_drv_rtl8188eu_mac_disable_rx_aggregation(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: RX aggregation disabled");
+
 	return;
 error:
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");

@@ -42,6 +42,41 @@ int u80211_drv_rtl8188eu_mac_enable_tx_rx(u80211_drv_device_handle_t device) {
 	return U80211_DRV_STATUS_SUCCESS;
 }
 
+int u80211_drv_rtl8188eu_mac_disable_rx_aggregation(u80211_drv_device_handle_t device) {
+	uint8_t usb_special;
+	int status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION, &usb_special);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	usb_special &= ~U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION_AGG_ENABLE;
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION, usb_special);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	uint8_t trxdma_ctrl;
+	status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL, &trxdma_ctrl);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	trxdma_ctrl &= ~U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_RXDMA_AGG_ENABLE;
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL, trxdma_ctrl);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION, &usb_special);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL, &trxdma_ctrl);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	if ((usb_special & U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION_AGG_ENABLE) != 0 || (trxdma_ctrl & U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_RXDMA_AGG_ENABLE) != 0)
+		return U80211_DRV_STATUS_FAULTY_HARDWARE;
+
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
 static uint16_t tx_queue_mapping(uint8_t bulk_out_endpoint_count) {
 	// map wifi traffic classes onto hardware queues
 	uint16_t vi_queue = bulk_out_endpoint_count >= 2 ? U80211_DRV_RTL8188EU_TRXDMA_QUEUE_NORMAL : U80211_DRV_RTL8188EU_TRXDMA_QUEUE_HIGH;

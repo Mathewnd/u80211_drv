@@ -105,6 +105,7 @@
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_MG_SHIFT 12
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_HI_SHIFT 14
 #define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_LOW_CONTROL_MASK 0x0007
+#define U80211_DRV_RTL8188EU_REG_TRXDMA_CTRL_RXDMA_AGG_ENABLE (1u << 2)
 
 #define U80211_DRV_RTL8188EU_REG_TRXFF_BNDY 0x0114
 #define U80211_DRV_RTL8188EU_RX_FIFO_BOUNDARY 0x25ff
@@ -155,6 +156,9 @@
 
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCRSSITABLE 0x0c78
 
+#define U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION 0xfe55
+#define U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION_AGG_ENABLE (1u << 3)
+
 #define U80211_DRV_RTL8188EU_TX_TOTAL_PAGE_NUM 0xa9
 #define U80211_DRV_RTL8188EU_TX_PAGE_NUM_HI_PQ 0x29
 #define U80211_DRV_RTL8188EU_TX_PAGE_NUM_LO_PQ 0x1c
@@ -190,6 +194,7 @@ int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188E
 int u80211_drv_rtl8188eu_power_active(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_enable_tx_rx(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_mac_disable_rx_aggregation(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_tx_queues(u80211_drv_device_handle_t device, uint8_t bulk_out_endpoint_count);
 int u80211_drv_rtl8188eu_mac_configure_rx_fifo_boundary(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_packet_buffer(u80211_drv_device_handle_t device);

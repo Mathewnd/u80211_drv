@@ -53,6 +53,18 @@
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG_TRP_VAUX_EN (1u << 23)
 #define U80211_DRV_RTL8188EU_REG_SYS_CFG_VER(value) (((value) >> 12) & 0xfu)
 
+#define U80211_DRV_RTL8188EU_REG_CR 0x0100
+#define U80211_DRV_RTL8188EU_REG_CR_HCI_TXDMA_ENABLE (1u << 0)
+#define U80211_DRV_RTL8188EU_REG_CR_HCI_RXDMA_ENABLE (1u << 1)
+#define U80211_DRV_RTL8188EU_REG_CR_TXDMA_ENABLE (1u << 2)
+#define U80211_DRV_RTL8188EU_REG_CR_RXDMA_ENABLE (1u << 3)
+#define U80211_DRV_RTL8188EU_REG_CR_PROTOCOL_ENABLE (1u << 4)
+#define U80211_DRV_RTL8188EU_REG_CR_SCHEDULE_ENABLE (1u << 5)
+#define U80211_DRV_RTL8188EU_REG_CR_MAC_TX_ENABLE (1u << 6)
+#define U80211_DRV_RTL8188EU_REG_CR_MAC_RX_ENABLE (1u << 7)
+#define U80211_DRV_RTL8188EU_REG_CR_SECURITY_ENABLE (1u << 9)
+#define U80211_DRV_RTL8188EU_REG_CR_CALTIMER_ENABLE (1u << 10)
+
 typedef struct {
 	uint16_t rtl_id;
 	uint8_t mac_address[U80211_DRV_RTL8188EU_MAC_ADDRESS_LEN];
@@ -72,6 +84,7 @@ int u80211_drv_rtl8188eu_efuse_finish(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_read_efuse(u80211_drv_device_handle_t device, uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN]);
 int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN], u80211_drv_rtl8188eu_efuse_t *result);
 int u80211_drv_rtl8188eu_power_active(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_reg_read8(u80211_drv_device_handle_t device, uint16_t reg, uint8_t *value);
 int u80211_drv_rtl8188eu_reg_read16(u80211_drv_device_handle_t device, uint16_t reg, uint16_t *value);
 int u80211_drv_rtl8188eu_reg_read32(u80211_drv_device_handle_t device, uint16_t reg, uint32_t *value);

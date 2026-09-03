@@ -1,6 +1,7 @@
 rtl8188eu_library = static_library(
   'rtl8188eu',
   'efuse.c',
+  'mac.c',
   'main.c',
   'power.c',
   'register.c',

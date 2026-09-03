@@ -9,14 +9,19 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: found rtl8188eufw.bin");
 	int status = u80211_drv_rtl8188eu_power_active(rtl8188eu->device);
-	if (status != U80211_DRV_STATUS_SUCCESS) {
-		u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");
-		u80211_drv_kernel_free(rtl8188eu);
-		return;
-	}
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	status = u80211_drv_rtl8188eu_mac_enable_infrastructure(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
 
 	(void)firmware_data;
 	(void)firmware_size;
+	return;
+
+error:
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");
 }
 
 int u80211_drv_rtl8188eu_init(u80211_drv_device_handle_t device, u80211_drv_interface_handle_t interface) {

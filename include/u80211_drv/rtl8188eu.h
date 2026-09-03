@@ -46,6 +46,12 @@ typedef struct {
 	uint8_t xtal_k;
 } u80211_drv_rtl8188eu_efuse_t;
 
+typedef struct {
+	u80211_drv_device_handle_t device;
+	u80211_drv_interface_handle_t interface;
+	u80211_drv_rtl8188eu_efuse_t efuse;
+} u80211_drv_rtl8188eu_t;
+
 int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_efuse_finish(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_read_efuse(u80211_drv_device_handle_t device, uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN]);

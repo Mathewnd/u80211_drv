@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,34 @@ typedef struct {
 	void *device;
 	const u80211_drv_device_ops_t *ops;
 } test_device_t;
+
+typedef struct {
+	libusb_context *context;
+	pthread_t thread;
+	bool stopping;
+} usb_event_thread_t;
+
+static void *usb_event_loop(void *context) {
+	usb_event_thread_t *event_thread = context;
+	while (!__atomic_load_n(&event_thread->stopping, __ATOMIC_ACQUIRE)) {
+		int status = libusb_handle_events(event_thread->context);
+		if (status != LIBUSB_SUCCESS && status != LIBUSB_ERROR_INTERRUPTED)
+			break;
+	}
+	return NULL;
+}
+
+static int start_usb_event_thread(usb_event_thread_t *event_thread, libusb_context *context) {
+	event_thread->context = context;
+	__atomic_store_n(&event_thread->stopping, false, __ATOMIC_RELAXED);
+	return pthread_create(&event_thread->thread, NULL, usb_event_loop, event_thread) == 0 ? U80211_DRV_STATUS_SUCCESS : U80211_DRV_STATUS_UNKNOWN_ERROR;
+}
+
+static void stop_usb_event_thread(usb_event_thread_t *event_thread) {
+	__atomic_store_n(&event_thread->stopping, true, __ATOMIC_RELEASE);
+	libusb_interrupt_event_handler(event_thread->context);
+	pthread_join(event_thread->thread, NULL);
+}
 
 static int status_to_u80211(int status) {
 	if (status == U80211_DRV_STATUS_SUCCESS)
@@ -248,6 +277,17 @@ int main(void) {
 		return TEST_FAILURE;
 	}
 
+	usb_event_thread_t event_thread;
+	if (start_usb_event_thread(&event_thread, usb_context) != U80211_DRV_STATUS_SUCCESS) {
+		fprintf(stderr, "USB event thread initialization failed\n");
+		libusb_release_interface(matched_device, matched_interface->bInterfaceNumber);
+		libusb_close(matched_device);
+		libusb_free_config_descriptor(matched_config);
+		libusb_free_device_list(devices, 1);
+		libusb_exit(usb_context);
+		return TEST_FAILURE;
+	}
+
 	int attach_status = u80211_drv_attach(matched_device, (void *)matched_interface);
 	int result = TEST_FAILURE;
 	if (attach_status != U80211_DRV_STATUS_SUCCESS)
@@ -261,6 +301,7 @@ int main(void) {
 		result = 0;
 	}
 
+	stop_usb_event_thread(&event_thread);
 	libusb_release_interface(matched_device, matched_interface->bInterfaceNumber);
 	libusb_close(matched_device);
 	libusb_free_config_descriptor(matched_config);

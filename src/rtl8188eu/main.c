@@ -4,6 +4,17 @@
 #include <u80211_drv/rtl8188eu.h>
 #include <u80211_drv/status.h>
 
+static int u80211_drv_rtl8188eu_led_enable_activity(u80211_drv_device_handle_t device) {
+	uint8_t ledcfg;
+	int status = u80211_drv_rtl8188eu_reg_read8(device, U80211_DRV_RTL8188EU_REG_LEDCFG2, &ledcfg);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	ledcfg &= ~U80211_DRV_RTL8188EU_REG_LEDCFG2_SW_LED_DISABLE;
+	ledcfg |= U80211_DRV_RTL8188EU_REG_LEDCFG2_HW_LED_CONTROL | U80211_DRV_RTL8188EU_REG_LEDCFG2_HW_LED_ENABLE;
+	return u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_LEDCFG2, ledcfg);
+}
+
 static int discover_bulk_out_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
 	u80211_drv_interface_descriptor_t interface_descriptor;
 	int status = u80211_drv_kernel_get_interface_descriptor(rtl8188eu->interface, &interface_descriptor);
@@ -201,6 +212,12 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 		goto error;
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: channel 1 configured");
+
+	status = u80211_drv_rtl8188eu_led_enable_activity(rtl8188eu->device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: activity LED enabled");
 
 	u80211_drv_device_metadata_t metadata = {
 		.rate_bitmap = {

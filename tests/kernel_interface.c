@@ -1,7 +1,10 @@
-#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -10,8 +13,21 @@
 
 #include <libusb.h>
 
+#include <u80211/kernel_interface.h>
 #include <u80211_drv/status.h>
 #include <u80211_drv/kernel_interface.h>
+
+typedef struct {
+	pthread_t thread;
+	pthread_mutex_t mutex;
+	pthread_cond_t condition;
+	bool stopping;
+	bool pending;
+	bool destroy_on_exit;
+	struct timespec deadline;
+	u80211_kernel_work_fn_t function;
+	void *context;
+} u80211_test_work_t;
 
 static int u80211_drv_kernel_status_from_libusb(int status) {
 	if (status == LIBUSB_SUCCESS)
@@ -151,4 +167,254 @@ void u80211_drv_kernel_print(int level, const char *msg) {
 			fprintf(stderr, "[UNKNOWN] %s\n", msg);
 			break;
 	}
+}
+
+static void u80211_test_destroy_work(u80211_test_work_t *work) {
+	pthread_cond_destroy(&work->condition);
+	pthread_mutex_destroy(&work->mutex);
+	free(work);
+}
+
+static int u80211_test_timespec_compare(const struct timespec *left, const struct timespec *right) {
+	if (left->tv_sec != right->tv_sec)
+		return left->tv_sec < right->tv_sec ? -1 : 1;
+	if (left->tv_nsec != right->tv_nsec)
+		return left->tv_nsec < right->tv_nsec ? -1 : 1;
+	return 0;
+}
+
+static struct timespec u80211_test_deadline_after_ms(size_t milliseconds) {
+	struct timespec deadline;
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	deadline.tv_sec += (time_t)(milliseconds / 1000);
+	deadline.tv_nsec += (long)(milliseconds % 1000) * 1000000L;
+	if (deadline.tv_nsec >= 1000000000L) {
+		++deadline.tv_sec;
+		deadline.tv_nsec -= 1000000000L;
+	}
+	return deadline;
+}
+
+static void *u80211_test_work_thread(void *argument) {
+	u80211_test_work_t *work = argument;
+	pthread_mutex_lock(&work->mutex);
+
+	for (;;) {
+		while (!work->stopping && !work->pending)
+			pthread_cond_wait(&work->condition, &work->mutex);
+		if (work->stopping)
+			break;
+
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		while (!work->stopping && u80211_test_timespec_compare(&now, &work->deadline) < 0) {
+			int status = pthread_cond_timedwait(&work->condition, &work->mutex, &work->deadline);
+			if (status != 0 && status != ETIMEDOUT)
+				continue;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+		}
+		if (work->stopping)
+			break;
+
+		u80211_kernel_work_fn_t function = work->function;
+		void *context = work->context;
+		work->pending = false;
+		pthread_mutex_unlock(&work->mutex);
+		function(context);
+		pthread_mutex_lock(&work->mutex);
+	}
+
+	bool destroy_on_exit = work->destroy_on_exit;
+	pthread_mutex_unlock(&work->mutex);
+	if (destroy_on_exit)
+		u80211_test_destroy_work(work);
+	return NULL;
+}
+
+void *u80211_kernel_allocate(size_t size) {
+	return malloc(size);
+}
+
+void u80211_kernel_free(void *memory) {
+	free(memory);
+}
+
+void *u80211_kernel_allocate_mutex(void) {
+	pthread_mutex_t *mutex = malloc(sizeof(*mutex));
+	if (mutex == NULL)
+		return NULL;
+	if (pthread_mutex_init(mutex, NULL) != 0) {
+		free(mutex);
+		return NULL;
+	}
+	return mutex;
+}
+
+void u80211_kernel_free_mutex(void *opaque_mutex) {
+	pthread_mutex_t *mutex = opaque_mutex;
+	pthread_mutex_destroy(mutex);
+	free(mutex);
+}
+
+void u80211_kernel_acquire_mutex(void *mutex) {
+	pthread_mutex_lock(mutex);
+}
+
+void u80211_kernel_release_mutex(void *mutex) {
+	pthread_mutex_unlock(mutex);
+}
+
+void *u80211_kernel_allocate_semaphore(unsigned int initial_count) {
+	sem_t *semaphore = malloc(sizeof(*semaphore));
+	if (semaphore == NULL)
+		return NULL;
+	if (sem_init(semaphore, 0, initial_count) != 0) {
+		free(semaphore);
+		return NULL;
+	}
+	return semaphore;
+}
+
+void u80211_kernel_free_semaphore(void *opaque_semaphore) {
+	sem_t *semaphore = opaque_semaphore;
+	sem_destroy(semaphore);
+	free(semaphore);
+}
+
+void u80211_kernel_wait_semaphore(void *semaphore) {
+	while (sem_wait(semaphore) != 0 && errno == EINTR)
+		;
+}
+
+void u80211_kernel_signal_semaphore(void *semaphore) {
+	sem_post(semaphore);
+}
+
+void *u80211_kernel_allocate_spinlock(void) {
+	void *memory = malloc(sizeof(pthread_spinlock_t));
+	if (memory == NULL)
+		return NULL;
+	pthread_spinlock_t *spinlock = memory;
+	if (pthread_spin_init(spinlock, PTHREAD_PROCESS_PRIVATE) != 0) {
+		free(memory);
+		return NULL;
+	}
+	return memory;
+}
+
+void u80211_kernel_free_spinlock(void *opaque_spinlock) {
+	pthread_spinlock_t *spinlock = opaque_spinlock;
+	pthread_spin_destroy(spinlock);
+	free(opaque_spinlock);
+}
+
+void u80211_kernel_acquire_spinlock(void *spinlock) {
+	pthread_spin_lock(spinlock);
+}
+
+void u80211_kernel_release_spinlock(void *spinlock) {
+	pthread_spin_unlock(spinlock);
+}
+
+void *u80211_kernel_allocate_rwlock(void) {
+	pthread_rwlock_t *rwlock = malloc(sizeof(*rwlock));
+	if (rwlock == NULL)
+		return NULL;
+	if (pthread_rwlock_init(rwlock, NULL) != 0) {
+		free(rwlock);
+		return NULL;
+	}
+	return rwlock;
+}
+
+void u80211_kernel_free_rwlock(void *opaque_rwlock) {
+	pthread_rwlock_t *rwlock = opaque_rwlock;
+	pthread_rwlock_destroy(rwlock);
+	free(rwlock);
+}
+
+void u80211_kernel_acquire_rwlock_exclusive(void *rwlock) {
+	pthread_rwlock_wrlock(rwlock);
+}
+
+void u80211_kernel_acquire_rwlock_shared(void *rwlock) {
+	pthread_rwlock_rdlock(rwlock);
+}
+
+void u80211_kernel_release_rwlock_exclusive(void *rwlock) {
+	pthread_rwlock_unlock(rwlock);
+}
+
+void u80211_kernel_release_rwlock_shared(void *rwlock) {
+	pthread_rwlock_unlock(rwlock);
+}
+
+void *u80211_kernel_allocate_work(void) {
+	u80211_test_work_t *work = calloc(1, sizeof(*work));
+	if (work == NULL)
+		return NULL;
+	if (pthread_mutex_init(&work->mutex, NULL) != 0) {
+		free(work);
+		return NULL;
+	}
+
+	pthread_condattr_t attributes;
+	if (pthread_condattr_init(&attributes) != 0) {
+		pthread_mutex_destroy(&work->mutex);
+		free(work);
+		return NULL;
+	}
+	if (pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC) != 0 ||
+		pthread_cond_init(&work->condition, &attributes) != 0) {
+		pthread_condattr_destroy(&attributes);
+		pthread_mutex_destroy(&work->mutex);
+		free(work);
+		return NULL;
+	}
+	pthread_condattr_destroy(&attributes);
+
+	if (pthread_create(&work->thread, NULL, u80211_test_work_thread, work) != 0) {
+		pthread_cond_destroy(&work->condition);
+		pthread_mutex_destroy(&work->mutex);
+		free(work);
+		return NULL;
+	}
+	return work;
+}
+
+void u80211_kernel_enqueue_work(void *opaque_work, u80211_kernel_work_fn_t function, void *context, size_t milliseconds) {
+	u80211_test_work_t *work = opaque_work;
+	pthread_mutex_lock(&work->mutex);
+	if (!work->pending) {
+		work->function = function;
+		work->context = context;
+		work->deadline = u80211_test_deadline_after_ms(milliseconds);
+		work->pending = true;
+		pthread_cond_signal(&work->condition);
+	}
+	pthread_mutex_unlock(&work->mutex);
+}
+
+void u80211_kernel_free_work(void *opaque_work) {
+	u80211_test_work_t *work = opaque_work;
+	bool destroy_on_exit = pthread_equal(pthread_self(), work->thread);
+
+	pthread_mutex_lock(&work->mutex);
+	work->stopping = true;
+	work->destroy_on_exit = destroy_on_exit;
+	pthread_cond_signal(&work->condition);
+	pthread_mutex_unlock(&work->mutex);
+
+	if (destroy_on_exit) {
+		pthread_detach(work->thread);
+		return;
+	}
+	pthread_join(work->thread, NULL);
+	u80211_test_destroy_work(work);
+}
+
+void u80211_kernel_receive_callback(u80211_device_t *device, void *buffer, size_t size) {
+	(void)device;
+	(void)buffer;
+	(void)size;
 }

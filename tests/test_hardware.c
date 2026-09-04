@@ -1,16 +1,14 @@
-#define _GNU_SOURCE
-
-#include <errno.h>
-#include <fcntl.h>
-#include <linux/if.h>
-#include <linux/if_tun.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
 #include <libusb.h>
 
+#include <u80211/status.h>
+#include <u80211/u80211.h>
+#include <u80211_drv/rtl8188eu.h>
 #include <u80211_drv/status.h>
 #include <u80211_drv/u80211_drv.h>
 
@@ -19,55 +17,139 @@ enum {
 	TEST_SKIP = 77,
 };
 
-static int attach_tap(const char *name) {
-	int descriptor = open("/dev/net/tun", O_RDWR | O_CLOEXEC);
-	if (descriptor < 0) {
-		fprintf(stderr, "SKIP: cannot open /dev/net/tun: %s\n", strerror(errno));
-		return -1;
+static bool ready_callback_called;
+static int ready_callback_status = U80211_DRV_STATUS_UNKNOWN_ERROR;
+
+static int status_to_u80211(int status) {
+	if (status == U80211_DRV_STATUS_SUCCESS)
+		return U80211_STATUS_SUCCESS;
+	if (status == U80211_DRV_STATUS_INVALID_ARGUMENT)
+		return U80211_STATUS_NOT_PERMITTED;
+	if (status == U80211_DRV_STATUS_OUT_OF_MEMORY)
+		return U80211_STATUS_ENOMEM;
+	return U80211_STATUS_UNKNOWN_ERROR;
+}
+
+static int allocate_tx_buffer(u80211_device_t *device, size_t size, u80211_tx_buffer_descriptor_t *descriptor) {
+	(void)device;
+	descriptor->data = u80211_drv_kernel_allocate(size);
+	if (descriptor->data == NULL)
+		return U80211_STATUS_ENOMEM;
+
+	descriptor->size = size;
+	descriptor->current_offset = size;
+	return U80211_STATUS_SUCCESS;
+}
+
+static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor) {
+	(void)device;
+	u80211_drv_kernel_free(descriptor->data);
+	descriptor->data = NULL;
+	descriptor->size = 0;
+	descriptor->current_offset = 0;
+	return U80211_STATUS_SUCCESS;
+}
+
+static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor) {
+	free_tx_buffer(device, descriptor);
+	return U80211_STATUS_UNSUPPORTED;
+}
+
+static int set_channel(u80211_device_t *device, int channel) {
+	if (channel < 1 || channel > UINT8_MAX)
+		return U80211_STATUS_NOT_PERMITTED;
+
+	u80211_drv_rtl8188eu_t *rtl8188eu = device->driver_data;
+	return status_to_u80211(u80211_drv_rtl8188eu_set_channel(rtl8188eu, (uint8_t)channel));
+}
+
+static const u80211_device_ops_t device_ops = {
+	.allocate_tx_buffer = allocate_tx_buffer,
+	.free_tx_buffer = free_tx_buffer,
+	.transmit = transmit,
+	.set_channel = set_channel,
+};
+
+static int print_scan_results(u80211_device_t *device) {
+	size_t cache_count = u80211_bss_cache_get_count(&device->bss_cache);
+	printf("scan complete: %zu access point%s\n", cache_count, cache_count == 1 ? "" : "s");
+	if (cache_count == 0)
+		return U80211_STATUS_SUCCESS;
+
+	u80211_ap_t **aps = malloc(cache_count * sizeof(*aps));
+	if (aps == NULL)
+		return U80211_STATUS_ENOMEM;
+
+	size_t ap_count = u80211_bss_cache_get_aps(&device->bss_cache, aps, cache_count);
+	for (size_t i = 0; i < ap_count; ++i) {
+		u80211_ap_t *ap = aps[i];
+		printf(
+			"SSID=\"%s\" channel=%u BSSID=%02x:%02x:%02x:%02x:%02x:%02x interval=%u capabilities=0x%04x rates=",
+			ap->ssid,
+			(unsigned int)ap->channel,
+			ap->mac_address.bytes[0], ap->mac_address.bytes[1], ap->mac_address.bytes[2],
+			ap->mac_address.bytes[3], ap->mac_address.bytes[4], ap->mac_address.bytes[5],
+			(unsigned int)ap->interval,
+			(unsigned int)ap->capabilities
+		);
+		for (size_t rate = 0; rate < sizeof(ap->rate_bitmap); ++rate)
+			printf("%s%02x", rate == 0 ? "" : ":", ap->rate_bitmap[rate]);
+		putchar('\n');
+		u80211_ap_release(ap);
 	}
 
-	struct ifreq request = {0};
-	request.ifr_flags = IFF_TAP | IFF_NO_PI;
-	if (snprintf(request.ifr_name, sizeof(request.ifr_name), "%s", name)
-			>= (int)sizeof(request.ifr_name)) {
-		fprintf(stderr, "tap interface name is too long: %s\n", name);
-		close(descriptor);
-		errno = EINVAL;
-		return -2;
-	}
+	free(aps);
+	return ap_count == cache_count ? U80211_STATUS_SUCCESS : U80211_STATUS_UNKNOWN_ERROR;
+}
 
-	if (ioctl(descriptor, TUNSETIFF, &request) < 0) {
-		fprintf(stderr, "SKIP: cannot attach to %s: %s\n", name, strerror(errno));
-		close(descriptor);
-		return -1;
-	}
+int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadata_t *driver_metadata) {
+	ready_callback_called = true;
 
-	return descriptor;
+	u80211_device_metadata_t metadata = {0};
+	memcpy(metadata.mac_address.bytes, driver_metadata->mac_address, sizeof(metadata.mac_address.bytes));
+	memcpy(metadata.rate_bitmap, driver_metadata->rate_bitmap, sizeof(metadata.rate_bitmap));
+
+	u80211_device_t *device = NULL;
+	int status = u80211_register_device(&metadata, &device_ops, driver_device, &device);
+	if (status != U80211_STATUS_SUCCESS)
+		goto done;
+
+	status = u80211_scan(device);
+	if (status != U80211_STATUS_SUCCESS)
+		goto unregister;
+	status = u80211_wait_for_scan_completion(device);
+	if (status != U80211_STATUS_SUCCESS)
+		goto unregister;
+	status = print_scan_results(device);
+
+unregister:
+	u80211_unregister_device(device);
+done:
+	ready_callback_status = status == U80211_STATUS_SUCCESS
+		? U80211_DRV_STATUS_SUCCESS
+		: U80211_DRV_STATUS_UNKNOWN_ERROR;
+	return ready_callback_status;
 }
 
 int main(void) {
 	libusb_context *usb_context = NULL;
 	int usb_status = libusb_init(&usb_context);
 	if (usb_status != LIBUSB_SUCCESS) {
-		fprintf(stderr, "SKIP: libusb initialization failed: %s\n",
-			libusb_error_name(usb_status));
+		fprintf(stderr, "SKIP: libusb initialization failed: %s\n", libusb_error_name(usb_status));
 		return TEST_SKIP;
 	}
 
 	libusb_device **devices = NULL;
 	ssize_t device_count = libusb_get_device_list(usb_context, &devices);
 	if (device_count < 0) {
-		fprintf(stderr, "SKIP: USB device enumeration failed: %s\n",
-			libusb_error_name((int)device_count));
+		fprintf(stderr, "SKIP: USB device enumeration failed: %s\n", libusb_error_name((int)device_count));
 		libusb_exit(usb_context);
 		return TEST_SKIP;
 	}
 
-	libusb_device_handle *usb_handle = NULL;
 	libusb_device_handle *matched_device = NULL;
 	const struct libusb_interface_descriptor *matched_interface = NULL;
 	struct libusb_config_descriptor *matched_config = NULL;
-	u80211_drv_endpoint_descriptor_t *matched_endpoints = NULL;
 	for (ssize_t i = 0; i < device_count; ++i) {
 		libusb_device_handle *candidate_handle = NULL;
 		usb_status = libusb_open(devices[i], &candidate_handle);
@@ -77,21 +159,19 @@ int main(void) {
 		struct libusb_config_descriptor *config = NULL;
 		usb_status = libusb_get_config_descriptor(devices[i], 0, &config);
 		if (usb_status != LIBUSB_SUCCESS) {
-			fprintf(stderr, "USB configuration descriptor retrieval failed: %s\n",
-				libusb_error_name(usb_status));
+			fprintf(stderr, "USB configuration descriptor retrieval failed: %s\n", libusb_error_name(usb_status));
 			libusb_close(candidate_handle);
 			continue;
 		}
 
-		int matched = 0;
+		bool matched = false;
 		for (uint8_t j = 0; j < config->bNumInterfaces && !matched; ++j) {
 			for (int k = 0; k < config->interface[j].num_altsetting; ++k) {
-				const struct libusb_interface_descriptor *candidate_interface =
-					&config->interface[j].altsetting[k];
+				const struct libusb_interface_descriptor *candidate_interface = &config->interface[j].altsetting[k];
 				if (u80211_drv_probe(candidate_handle, (void *)candidate_interface) == U80211_DRV_STATUS_SUCCESS) {
 					matched_device = candidate_handle;
 					matched_interface = candidate_interface;
-					matched = 1;
+					matched = true;
 					break;
 				}
 			}
@@ -103,60 +183,20 @@ int main(void) {
 		}
 
 		matched_config = config;
-		usb_handle = matched_device;
 		break;
 	}
 
-	if (usb_handle == NULL) {
+	if (matched_device == NULL) {
 		fprintf(stderr, "SKIP: no supported USB device found\n");
 		libusb_free_device_list(devices, 1);
 		libusb_exit(usb_context);
 		return TEST_SKIP;
 	}
 
-	u80211_drv_interface_descriptor_t interface_descriptor;
-	if (u80211_drv_kernel_get_interface_descriptor((void *)matched_interface, &interface_descriptor) != U80211_DRV_STATUS_SUCCESS) {
-		libusb_close(usb_handle);
-		libusb_free_config_descriptor(matched_config);
-		libusb_free_device_list(devices, 1);
-		libusb_exit(usb_context);
-		return TEST_FAILURE;
-	}
-
-	if (interface_descriptor.endpoint_count != 0) {
-		matched_endpoints = u80211_drv_kernel_allocate(interface_descriptor.endpoint_count * sizeof(*matched_endpoints));
-		if (matched_endpoints == NULL) {
-			libusb_close(usb_handle);
-			libusb_free_config_descriptor(matched_config);
-			libusb_free_device_list(devices, 1);
-			libusb_exit(usb_context);
-			return TEST_FAILURE;
-		}
-	}
-	if (u80211_drv_kernel_get_endpoints((void *)matched_interface, matched_endpoints, interface_descriptor.endpoint_count) != U80211_DRV_STATUS_SUCCESS) {
-		u80211_drv_kernel_free(matched_endpoints);
-		libusb_close(usb_handle);
-		libusb_free_config_descriptor(matched_config);
-		libusb_free_device_list(devices, 1);
-		libusb_exit(usb_context);
-		return TEST_FAILURE;
-	}
-	int tap_descriptor = attach_tap("tap0");
-	if (tap_descriptor < 0) {
-		u80211_drv_kernel_free(matched_endpoints);
-		libusb_close(usb_handle);
-		libusb_free_config_descriptor(matched_config);
-		libusb_free_device_list(devices, 1);
-		libusb_exit(usb_context);
-		return tap_descriptor == -2 ? TEST_FAILURE : TEST_SKIP;
-	}
-
 	usb_status = libusb_reset_device(matched_device);
 	if (usb_status != LIBUSB_SUCCESS) {
 		fprintf(stderr, "USB device reset failed: %s\n", libusb_error_name(usb_status));
-		close(tap_descriptor);
-		u80211_drv_kernel_free(matched_endpoints);
-		libusb_close(usb_handle);
+		libusb_close(matched_device);
 		libusb_free_config_descriptor(matched_config);
 		libusb_free_device_list(devices, 1);
 		libusb_exit(usb_context);
@@ -164,24 +204,21 @@ int main(void) {
 	}
 
 	int attach_status = u80211_drv_attach(matched_device, (void *)matched_interface);
-	if (attach_status != U80211_DRV_STATUS_SUCCESS) {
+	int result = TEST_FAILURE;
+	if (attach_status != U80211_DRV_STATUS_SUCCESS)
 		fprintf(stderr, "driver attach failed for USB device: %d\n", attach_status);
-		close(tap_descriptor);
-		u80211_drv_kernel_free(matched_endpoints);
-		libusb_close(usb_handle);
-		libusb_free_config_descriptor(matched_config);
-		libusb_free_device_list(devices, 1);
-		libusb_exit(usb_context);
-		return TEST_FAILURE;
+	else if (!ready_callback_called)
+		fprintf(stderr, "driver attach completed without a device-ready callback\n");
+	else if (ready_callback_status != U80211_DRV_STATUS_SUCCESS)
+		fprintf(stderr, "device-ready callback failed: %d\n", ready_callback_status);
+	else {
+		puts("u80211_drv: hardware scan scaffold completed");
+		result = 0;
 	}
 
-	printf("u80211_drv: attached USB device to tap0\n");
-
-	close(tap_descriptor);
-	u80211_drv_kernel_free(matched_endpoints);
-	libusb_close(usb_handle);
+	libusb_close(matched_device);
 	libusb_free_config_descriptor(matched_config);
 	libusb_free_device_list(devices, 1);
 	libusb_exit(usb_context);
-	return 0;
+	return result;
 }

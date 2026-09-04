@@ -29,6 +29,14 @@ typedef struct {
 	uint8_t interval;
 } u80211_drv_endpoint_descriptor_t;
 
+#define U80211_DRV_DEVICE_MAC_ADDRESS_LEN 6
+#define U80211_DRV_DEVICE_RATE_BITMAP_LEN 16
+
+typedef struct {
+	uint8_t mac_address[U80211_DRV_DEVICE_MAC_ADDRESS_LEN];
+	uint8_t rate_bitmap[U80211_DRV_DEVICE_RATE_BITMAP_LEN];
+} u80211_drv_device_metadata_t;
+
 #define U80211_DRV_KERNEL_XFER_OUT 0x00
 #define U80211_DRV_KERNEL_XFER_IN 0x80
 #define U80211_DRV_KERNEL_XFER_DIRECTION_MASK 0x80
@@ -63,5 +71,6 @@ int u80211_drv_kernel_submit_control_xfer_and_wait(u80211_drv_device_handle_t de
 int u80211_drv_kernel_submit_bulk_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t endpoint_address, void *buf, size_t buffer_size, size_t *transferred_size, unsigned int timeout);
 void u80211_drv_kernel_stall_us(unsigned int microseconds);
 void u80211_drv_kernel_print(int level, const char *msg);
+int u80211_drv_device_ready(void *device, const u80211_drv_device_metadata_t *metadata);
 
 #endif

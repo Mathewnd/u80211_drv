@@ -202,6 +202,33 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: channel 1 configured");
 
+	u80211_drv_device_metadata_t metadata = {
+		.rate_bitmap = {
+			0x14, // 1 and 2 Mbps
+			0x18, // 5.5 and 6 Mbps
+			0x44, // 9 and 11 Mbps
+			0x01, // 12 Mbps
+			0x10, // 18 Mbps
+			0x00,
+			0x01, // 24 Mbps
+			0x00,
+			0x00,
+			0x01, // 36 Mbps
+			0x00,
+			0x00,
+			0x01, // 48 Mbps
+			0x10, // 54 Mbps
+			0x00,
+			0x00,
+		},
+	};
+	for (size_t i = 0; i < U80211_DRV_DEVICE_MAC_ADDRESS_LEN; ++i)
+		metadata.mac_address[i] = rtl8188eu->efuse.mac_address[i];
+
+	status = u80211_drv_device_ready(rtl8188eu, &metadata);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
 	return;
 error:
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");

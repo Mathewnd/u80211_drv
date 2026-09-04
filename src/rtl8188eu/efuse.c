@@ -14,6 +14,7 @@
 #define EFUSE_RTL_ID_OFFSET 0x000
 #define EFUSE_CCK_TX_POWER_BASE_INDEX_OFFSET 0x010
 #define EFUSE_HT40_1S_TX_POWER_BASE_INDEX_OFFSET 0x016
+#define EFUSE_HT20_OFDM_TX_POWER_DIFF_OFFSET 0x01b
 #define EFUSE_XTAL_K_OFFSET 0x0b9
 #define EFUSE_MAC_ADDRESS_OFFSET 0x0d7
 
@@ -194,6 +195,7 @@ int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188E
 
 	for (unsigned int i = 0; i < U80211_DRV_RTL8188EU_HT40_1S_TX_POWER_BASE_INDEX_COUNT; ++i)
 		result->ht40_1s_tx_power_base_indexes[i] = efuse_map[EFUSE_HT40_1S_TX_POWER_BASE_INDEX_OFFSET + i];
+	result->ht20_ofdm_tx_power_diff = efuse_map[EFUSE_HT20_OFDM_TX_POWER_DIFF_OFFSET];
 
 	result->xtal_k = efuse_map[EFUSE_XTAL_K_OFFSET] & 0x3f;
 	return U80211_DRV_STATUS_SUCCESS;

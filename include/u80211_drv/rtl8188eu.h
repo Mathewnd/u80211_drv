@@ -223,6 +223,8 @@
 #define U80211_DRV_RTL8188EU_REG_RF_IFACE_OE_RF_ENV (1u << 4)
 #define U80211_DRV_RTL8188EU_REG_RF_IFACE_OE_RF_ENV_ENABLE (1u << 20)
 
+#define U80211_DRV_RTL8188EU_REG_TXAGC_B_CCK11_A_CCK2_11 0x086c
+
 #define U80211_DRV_RTL8188EU_REG_RF_IFACE_SW_A 0x0870
 #define U80211_DRV_RTL8188EU_REG_RF_IFACE_SW_RF_ENV (1u << 4)
 
@@ -236,6 +238,13 @@
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_FINAL 0x69553420
 
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCRSSITABLE 0x0c78
+
+#define U80211_DRV_RTL8188EU_REG_TXAGC_A_RATE18_06 0x0e00
+#define U80211_DRV_RTL8188EU_REG_TXAGC_A_RATE54_24 0x0e04
+#define U80211_DRV_RTL8188EU_REG_TXAGC_A_CCK1 0x0e08
+#define U80211_DRV_RTL8188EU_REG_TXAGC_A_MCS03 0x0e10
+#define U80211_DRV_RTL8188EU_REG_TXAGC_A_MCS07 0x0e14
+#define U80211_DRV_RTL8188EU_REG_TXAGC_A_CCK1_MASK 0x0000ff00
 
 #define U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION 0xfe55
 #define U80211_DRV_RTL8188EU_REG_USB_SPECIAL_OPTION_AGG_ENABLE (1u << 3)
@@ -269,6 +278,7 @@ typedef struct {
 	uint8_t mac_address[U80211_DRV_RTL8188EU_MAC_ADDRESS_LEN];
 	uint8_t cck_tx_power_base_indexes[U80211_DRV_RTL8188EU_CCK_TX_POWER_BASE_INDEX_COUNT];
 	uint8_t ht40_1s_tx_power_base_indexes[U80211_DRV_RTL8188EU_HT40_1S_TX_POWER_BASE_INDEX_COUNT];
+	uint8_t ht20_ofdm_tx_power_diff;
 	uint8_t xtal_k;
 } u80211_drv_rtl8188eu_efuse_t;
 
@@ -309,6 +319,7 @@ int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8
 int u80211_drv_rtl8188eu_rf_write(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t value);
 int u80211_drv_rtl8188eu_rf_read(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t *value);
 int u80211_drv_rtl8188eu_rf_load_table(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_set_tx_power(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t channel);
 int u80211_drv_rtl8188eu_calibrate(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);

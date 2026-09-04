@@ -487,9 +487,3 @@ void u80211_kernel_free_work(void *opaque_work) {
 	pthread_join(work->thread, NULL);
 	u80211_test_destroy_work(work);
 }
-
-void u80211_kernel_receive_callback(u80211_device_t *device, void *buffer, size_t size) {
-	(void)device;
-	(void)buffer;
-	(void)size;
-}

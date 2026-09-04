@@ -1,9 +1,20 @@
+#define _GNU_SOURCE
+
 #include <stdbool.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <net/if.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <linux/if_tun.h>
 
 #include <libusb.h>
 
@@ -27,7 +38,39 @@ typedef struct {
 	const u80211_drv_device_ops_t *ops;
 	pthread_mutex_t receive_mutex;
 	u80211_device_t *u80211_device;
+	int tap_fd;
+	pthread_t tap_thread;
 } test_device_t;
+
+static void *tap_io_loop(void *context) {
+	test_device_t *test_device = context;
+	uint8_t frame[1514];
+	for (;;) {
+		ssize_t size = read(test_device->tap_fd, frame, sizeof(frame));
+		if (size < 0) {
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (size == 0)
+			continue;
+
+		u80211_device_t *device = test_device->u80211_device;
+		if (device == NULL)
+			continue;
+		u80211_tx_buffer_descriptor_t descriptor;
+		if (u80211_allocate_tx_buffer(device, &descriptor) != U80211_STATUS_SUCCESS)
+			continue;
+		if ((size_t)size > descriptor.size) {
+			device->ops->free_tx_buffer(device, &descriptor);
+			continue;
+		}
+		descriptor.current_offset = descriptor.size - (size_t)size;
+		memcpy((uint8_t *)descriptor.data + descriptor.current_offset, frame, (size_t)size);
+		u80211_transmit_buffer(device, &descriptor);
+	}
+	return NULL;
+}
 
 static void *usb_event_loop(void *context) {
 	libusb_context *usb_context = context;
@@ -139,6 +182,120 @@ static int print_scan_results(u80211_device_t *device) {
 	return ap_count == cache_count ? U80211_STATUS_SUCCESS : U80211_STATUS_UNKNOWN_ERROR;
 }
 
+static u80211_ap_t *find_ap_by_ssid(u80211_device_t *device, const char *ssid) {
+	size_t capacity = u80211_bss_cache_get_count(&device->bss_cache);
+	if (capacity == 0)
+		return NULL;
+
+	u80211_ap_t **aps = malloc(capacity * sizeof(*aps));
+	if (aps == NULL)
+		return NULL;
+
+	size_t count = u80211_bss_cache_get_aps(&device->bss_cache, aps, capacity);
+	u80211_ap_t *match = NULL;
+	for (size_t i = 0; i < count; ++i) {
+		if (match == NULL && strcmp(aps[i]->ssid, ssid) == 0)
+			match = aps[i];
+		else
+			u80211_ap_release(aps[i]);
+	}
+
+	free(aps);
+	return match;
+}
+
+static void wait_for_association_work(void) {
+	unsigned int seconds = 6;
+	while (seconds != 0)
+		seconds = sleep(seconds);
+}
+
+static bool configure_tap(u80211_device_t *device) {
+	char mac[18];
+	if (snprintf(mac, sizeof(mac), "%02x:%02x:%02x:%02x:%02x:%02x",
+		device->metadata.mac_address.bytes[0], device->metadata.mac_address.bytes[1],
+		device->metadata.mac_address.bytes[2], device->metadata.mac_address.bytes[3],
+		device->metadata.mac_address.bytes[4], device->metadata.mac_address.bytes[5]) != 17)
+		return false;
+
+	char command[128];
+	if (snprintf(command, sizeof(command), "ip link set dev tap0 down") < 0 || system(command) != 0)
+		return false;
+	if (snprintf(command, sizeof(command), "ip link set dev tap0 address %s", mac) < 0 || system(command) != 0)
+		return false;
+	if (snprintf(command, sizeof(command), "ip link set dev tap0 up") < 0 || system(command) != 0)
+		return false;
+	return true;
+}
+
+static bool in_private_network_namespace(void) {
+	struct stat self_namespace;
+	struct stat init_namespace;
+	if (stat("/proc/self/ns/net", &self_namespace) != 0 ||
+		stat("/proc/1/ns/net", &init_namespace) != 0)
+		return false;
+	return self_namespace.st_ino != init_namespace.st_ino ||
+		self_namespace.st_dev != init_namespace.st_dev;
+}
+
+static int run_interactive_shell(void) {
+	const char *shell = getenv("SHELL");
+	if (shell == NULL || access(shell, X_OK) != 0)
+		shell = "/bin/sh";
+
+	pid_t child = fork();
+	if (child < 0)
+		return -1;
+	if (child == 0) {
+		execl(shell, shell, "-i", (char *)NULL);
+		_exit(127);
+	}
+
+	int child_status;
+	while (waitpid(child, &child_status, 0) < 0) {
+		if (errno != EINTR)
+			return -1;
+	}
+	return child_status;
+}
+
+static int start_dhcp(void) {
+	pid_t child = fork();
+	if (child < 0)
+		return -1;
+	if (child == 0) {
+		execlp(
+			"dhcpcd", "dhcpcd", "-4", "-B",
+			"-C", "resolv.conf",
+			"-C", "hostname",
+			"-C", "timesyncd.conf",
+			"tap0", (char *)NULL
+		);
+		_exit(127);
+	}
+	return 0;
+}
+
+static int open_tap(void) {
+	int tap = open("/dev/net/tun", O_RDWR);
+	if (tap < 0)
+		return -1;
+	if (fcntl(tap, F_SETFD, FD_CLOEXEC) < 0) {
+		close(tap);
+		return -1;
+	}
+
+	struct ifreq interface = {0};
+	strncpy(interface.ifr_name, "tap0", sizeof(interface.ifr_name) - 1);
+	interface.ifr_flags = IFF_TAP | IFF_NO_PI;
+	if (ioctl(tap, TUNSETIFF, &interface) < 0) {
+		close(tap);
+		return -1;
+	}
+
+	return tap;
+}
+
 void u80211_drv_packet_received(u80211_drv_network_device_handle_t network_device, void *packet, size_t packet_size) {
 	test_device_t *test_device = network_device;
 	pthread_mutex_lock(&test_device->receive_mutex);
@@ -148,9 +305,18 @@ void u80211_drv_packet_received(u80211_drv_network_device_handle_t network_devic
 	pthread_mutex_unlock(&test_device->receive_mutex);
 }
 
+void u80211_kernel_receive_callback(u80211_device_t *device, void *buffer, size_t size) {
+	test_device_t *test_device = device->driver_data;
+	if (test_device == NULL || test_device->tap_fd < 0)
+		return;
+	ssize_t written = write(test_device->tap_fd, buffer, size);
+	(void)written;
+}
+
 int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadata_t *driver_metadata, const u80211_drv_device_ops_t *driver_ops, u80211_drv_network_device_handle_t *network_device) {
 	ready_callback_called = true;
 	__atomic_store_n(&scan_tx_status, U80211_STATUS_SUCCESS, __ATOMIC_RELAXED);
+	bool association_started = false;
 	test_device_t *test_device = malloc(sizeof(*test_device));
 	if (test_device == NULL) {
 		ready_callback_status = U80211_DRV_STATUS_OUT_OF_MEMORY;
@@ -160,6 +326,7 @@ int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadat
 		.device = driver_device,
 		.ops = driver_ops,
 		.u80211_device = NULL,
+		.tap_fd = -1,
 	};
 	if (pthread_mutex_init(&test_device->receive_mutex, NULL) != 0) {
 		free(test_device);
@@ -194,8 +361,67 @@ int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadat
 		goto unregister;
 	}
 	status = print_scan_results(device);
+	if (status != U80211_STATUS_SUCCESS)
+		goto unregister;
+
+	u80211_ap_t *ap = find_ap_by_ssid(device, "astral ftw");
+	if (ap == NULL) {
+		fputs("could not find the astral ftw network\n", stderr);
+		status = U80211_STATUS_UNKNOWN_ERROR;
+		goto unregister;
+	}
+	u80211_mac_address_t bssid = ap->mac_address;
+
+	status = u80211_associate(device, ap);
+	u80211_ap_release(ap);
+	if (status != U80211_STATUS_SUCCESS) {
+		fprintf(stderr, "could not start association with astral ftw: status %d\n", status);
+		goto unregister;
+	}
+	association_started = true;
+
+	status = u80211_wait_for_association_completion(device);
+	if (status != U80211_STATUS_SUCCESS) {
+		fprintf(stderr, "association with astral ftw failed: status %d\n", status);
+		goto unregister;
+	}
+	if (u80211_get_device_state(device) != U80211_DEVICE_STATE_ASSOCIATED || device->ap == NULL ||
+		strcmp(device->ap->ssid, "astral ftw") != 0 || !u80211_mac_address_equal(&device->ap->mac_address, &bssid)) {
+		fputs("association completed without selecting the astral ftw BSSID\n", stderr);
+		status = U80211_STATUS_UNKNOWN_ERROR;
+		goto unregister;
+	}
+
+	int tap = open_tap();
+	bool tap_ready = false;
+	if (tap < 0) {
+		fputs("could not open tap0 for packet I/O\n", stderr);
+	} else if (!(tap_ready = configure_tap(device))) {
+		fputs("could not configure tap0\n", stderr);
+	}
+	if (tap >= 0 && tap_ready) {
+		test_device->tap_fd = tap;
+		if (pthread_create(&test_device->tap_thread, NULL, tap_io_loop, test_device) != 0) {
+			fputs("could not start tap packet I/O thread\n", stderr);
+		} else if (!in_private_network_namespace()) {
+			fputs("skipping DHCP in the host network namespace; use run_with_ns.sh\n", stderr);
+		} else if (start_dhcp() != 0) {
+			fputs("could not launch isolated IPv4 DHCP on tap0\n", stderr);
+		}
+	}
+
+	printf(
+		"associated with astral ftw (%02x:%02x:%02x:%02x:%02x:%02x); starting namespace shell\n",
+		bssid.bytes[0], bssid.bytes[1], bssid.bytes[2],
+		bssid.bytes[3], bssid.bytes[4], bssid.bytes[5]
+	);
+	fflush(stdout);
+	if (run_interactive_shell() < 0)
+		fputs("could not start the network namespace shell\n", stderr);
 
 unregister:
+	if (association_started)
+		wait_for_association_work();
 	pthread_mutex_lock(&test_device->receive_mutex);
 	test_device->u80211_device = NULL;
 	pthread_mutex_unlock(&test_device->receive_mutex);

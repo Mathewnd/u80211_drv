@@ -3,7 +3,7 @@ rtl8188eu_library = static_library(
   'bb_table.c',
   'efuse.c',
   'firmware.c',
-  'iq_calibration.c',
+  'calibration.c',
   'mac.c',
   'mac_table.c',
   'main.c',

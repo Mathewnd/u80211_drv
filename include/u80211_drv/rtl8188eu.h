@@ -309,7 +309,7 @@ int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8
 int u80211_drv_rtl8188eu_rf_write(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t value);
 int u80211_drv_rtl8188eu_rf_read(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t *value);
 int u80211_drv_rtl8188eu_rf_load_table(u80211_drv_device_handle_t device);
-int u80211_drv_rtl8188eu_iq_calibrate(u80211_drv_device_handle_t device);
+int u80211_drv_rtl8188eu_calibrate(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_start(u80211_drv_device_handle_t device);

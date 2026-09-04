@@ -37,6 +37,7 @@
 #define RTL8188EU_REG_BCN_CTRL_ENABLE (1u << 3)
 
 #define RTL8188EU_REG_CCK0_AFESETTING 0x0a04
+#define RTL8188EU_REG_OFDM1_LSTF 0x0d00
 #define RTL8188EU_REG_CONFIG_ANT_A 0x0b68
 #define RTL8188EU_REG_OFDM0_TRXPATHENA 0x0c04
 #define RTL8188EU_REG_OFDM0_TRMUXPAR 0x0c08
@@ -68,6 +69,12 @@
 #define RTL8188EU_IQK_TX1_FAILURE 0x0042
 #define RTL8188EU_IQK_RX0_FAILURE 0x0132
 #define RTL8188EU_IQK_RX1_FAILURE 0x0036
+
+#define RTL8188EU_RF_AC 0x00
+#define RTL8188EU_RF_AC_MODE_MASK 0x70000
+#define RTL8188EU_RF_AC_MODE_STANDBY 0x10000
+#define RTL8188EU_RF_CHNLBW_LCSTART 0x08000
+#define RTL8188EU_CONTINUOUS_TX_MASK 0x70
 
 static const uint16_t rtl8188eu_iqk_adda_regs[] = {
 	0x085c,
@@ -475,7 +482,7 @@ static int rtl8188eu_iqk_write_results(u80211_drv_device_handle_t device, const 
 	return u80211_drv_rtl8188eu_reg_write32(device, RTL8188EU_REG_OFDM0_RXIQEXTANTA, reg);
 }
 
-int u80211_drv_rtl8188eu_iq_calibrate(u80211_drv_device_handle_t device) {
+static int rtl8188eu_iq_calibrate(u80211_drv_device_handle_t device) {
 	rtl8188eu_iqk_saved_t saved;
 	int status = rtl8188eu_iqk_save(device, &saved);
 	if (status != U80211_DRV_STATUS_SUCCESS)
@@ -534,4 +541,107 @@ int u80211_drv_rtl8188eu_iq_calibrate(u80211_drv_device_handle_t device) {
 	}
 
 	return rtl8188eu_iqk_write_results(device, &results[accepted_run]);
+}
+
+static int rtl8188eu_lc_calibrate(u80211_drv_device_handle_t device) {
+	uint8_t txmode;
+	int status = u80211_drv_rtl8188eu_reg_read8(device, RTL8188EU_REG_OFDM1_LSTF + 3, &txmode);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	int result = U80211_DRV_STATUS_SUCCESS;
+	bool continuous_tx = (txmode & RTL8188EU_CONTINUOUS_TX_MASK) != 0;
+	bool txmode_modified = false;
+	bool txpause_modified = false;
+	bool rf_ac_modified = false;
+	uint8_t txpause = 0;
+	uint32_t rf_ac = 0;
+
+	if (continuous_tx) {
+		// disable continuous tx
+		txmode_modified = true;
+		status = u80211_drv_rtl8188eu_reg_write8(device, RTL8188EU_REG_OFDM1_LSTF + 3, txmode & ~RTL8188EU_CONTINUOUS_TX_MASK);
+		if (status != U80211_DRV_STATUS_SUCCESS) {
+			result = status;
+			goto restore;
+		}
+
+		status = u80211_drv_rtl8188eu_rf_read(device, RTL8188EU_RF_AC, &rf_ac);
+		if (status != U80211_DRV_STATUS_SUCCESS) {
+			result = status;
+			goto restore;
+		}
+		rf_ac_modified = true;
+		status = u80211_drv_rtl8188eu_rf_write(device, RTL8188EU_RF_AC, (rf_ac & ~RTL8188EU_RF_AC_MODE_MASK) | RTL8188EU_RF_AC_MODE_STANDBY);
+		if (status != U80211_DRV_STATUS_SUCCESS) {
+			result = status;
+			goto restore;
+		}
+	} else {
+		// pause tx
+		status = u80211_drv_rtl8188eu_reg_read8(device, RTL8188EU_REG_TXPAUSE, &txpause);
+		if (status != U80211_DRV_STATUS_SUCCESS)
+			return status;
+
+		txpause_modified = true;
+		status = u80211_drv_rtl8188eu_reg_write8(device, RTL8188EU_REG_TXPAUSE, UINT8_MAX);
+		if (status != U80211_DRV_STATUS_SUCCESS) {
+			result = status;
+			goto restore;
+		}
+	}
+
+	// calibrate lc
+	uint32_t chnlbw;
+	status = u80211_drv_rtl8188eu_rf_read(device, U80211_DRV_RTL8188EU_RF_CHNLBW, &chnlbw);
+	if (status != U80211_DRV_STATUS_SUCCESS) {
+		result = status;
+		goto restore;
+	}
+	status = u80211_drv_rtl8188eu_rf_write(
+		device,
+		U80211_DRV_RTL8188EU_RF_CHNLBW,
+		chnlbw | RTL8188EU_RF_CHNLBW_LCSTART
+	);
+	if (status != U80211_DRV_STATUS_SUCCESS) {
+		result = status;
+		goto restore;
+	}
+	u80211_drv_kernel_stall_us(100);
+
+restore:
+	if (rf_ac_modified) {
+		status = u80211_drv_rtl8188eu_rf_write(device, RTL8188EU_RF_AC, rf_ac);
+		rtl8188eu_iqk_record_error(&result, status);
+	}
+	if (txmode_modified) {
+		status = u80211_drv_rtl8188eu_reg_write8(device, RTL8188EU_REG_OFDM1_LSTF + 3, txmode);
+		rtl8188eu_iqk_record_error(&result, status);
+	}
+	if (txpause_modified) {
+		status = u80211_drv_rtl8188eu_reg_write8(device, RTL8188EU_REG_TXPAUSE, txpause);
+		rtl8188eu_iqk_record_error(&result, status);
+	}
+	return result;
+}
+
+static int rtl8188eu_calibration_gpio_cleanup(u80211_drv_device_handle_t device) {
+	uint8_t gpio;
+	int status = u80211_drv_rtl8188eu_reg_read8(device, RTL8188EU_REG_GPIO_MUXCFG, &gpio);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	return u80211_drv_rtl8188eu_reg_write8(device, RTL8188EU_REG_GPIO_MUXCFG, gpio & ~RTL8188EU_REG_GPIO_MUXCFG_ENBT);
+}
+
+int u80211_drv_rtl8188eu_calibrate(u80211_drv_device_handle_t device) {
+	int status = rtl8188eu_iq_calibrate(device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	status = rtl8188eu_lc_calibrate(device);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status;
+
+	return rtl8188eu_calibration_gpio_cleanup(device);
 }

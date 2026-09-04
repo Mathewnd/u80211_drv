@@ -2,6 +2,7 @@
 #define U80211_DRV_RTL8188EU_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <u80211_drv/kernel_interface.h>
@@ -306,7 +307,9 @@ int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_efuse_finish(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_read_efuse(u80211_drv_device_handle_t device, uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN]);
 int u80211_drv_rtl8188eu_parse_efuse(const uint8_t efuse_map[U80211_DRV_RTL8188EU_EFUSE_MAP_LEN], u80211_drv_rtl8188eu_efuse_t *result);
+
 int u80211_drv_rtl8188eu_power_active(u80211_drv_device_handle_t device);
+
 int u80211_drv_rtl8188eu_mac_enable_infrastructure(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_enable_tx_rx(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_disable_rx_aggregation(u80211_drv_device_handle_t device);
@@ -319,20 +322,29 @@ int u80211_drv_rtl8188eu_mac_set_edca(u80211_drv_device_handle_t device, u80211_
 int u80211_drv_rtl8188eu_mac_configure_timing(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_configure_hardware_offloads(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_mac_load_table(u80211_drv_device_handle_t device);
+
 int u80211_drv_rtl8188eu_bb_enable(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_enable_datapaths(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_load_agc_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_bb_apply_efuse_calibration(u80211_drv_rtl8188eu_t *rtl8188eu);
+
 int u80211_drv_rtl8188eu_rf_write(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t value);
 int u80211_drv_rtl8188eu_rf_read(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t *value);
 int u80211_drv_rtl8188eu_rf_load_table(u80211_drv_device_handle_t device);
+
 int u80211_drv_rtl8188eu_set_tx_power(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t channel);
 int u80211_drv_rtl8188eu_set_channel(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t channel);
+int u80211_drv_rtl8188eu_tx_buffer_allocate(size_t size, void **buffer);
+void u80211_drv_rtl8188eu_tx_buffer_free(void *buffer);
+int u80211_drv_rtl8188eu_transmit(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, size_t size, size_t current_offset);
+
 int u80211_drv_rtl8188eu_calibrate(u80211_drv_device_handle_t device);
+
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_start(u80211_drv_device_handle_t device);
+
 int u80211_drv_rtl8188eu_reg_read8(u80211_drv_device_handle_t device, uint16_t reg, uint8_t *value);
 int u80211_drv_rtl8188eu_reg_read16(u80211_drv_device_handle_t device, uint16_t reg, uint16_t *value);
 int u80211_drv_rtl8188eu_reg_read32(u80211_drv_device_handle_t device, uint16_t reg, uint32_t *value);

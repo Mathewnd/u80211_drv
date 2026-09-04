@@ -19,23 +19,32 @@ enum {
 
 static bool ready_callback_called;
 static int ready_callback_status = U80211_DRV_STATUS_UNKNOWN_ERROR;
+static int scan_tx_status = U80211_STATUS_SUCCESS;
 
 static int status_to_u80211(int status) {
 	if (status == U80211_DRV_STATUS_SUCCESS)
 		return U80211_STATUS_SUCCESS;
+	if (status == U80211_DRV_STATUS_NOT_SUPPORTED)
+		return U80211_STATUS_UNSUPPORTED;
 	if (status == U80211_DRV_STATUS_INVALID_ARGUMENT)
+		return U80211_STATUS_NOT_PERMITTED;
+	if (status == U80211_DRV_STATUS_MALFORMED_PACKET)
 		return U80211_STATUS_NOT_PERMITTED;
 	if (status == U80211_DRV_STATUS_OUT_OF_MEMORY)
 		return U80211_STATUS_ENOMEM;
+	if (status == U80211_DRV_STATUS_TIMEOUT)
+		return U80211_STATUS_TIMED_OUT;
 	return U80211_STATUS_UNKNOWN_ERROR;
 }
 
 static int allocate_tx_buffer(u80211_device_t *device, size_t size, u80211_tx_buffer_descriptor_t *descriptor) {
 	(void)device;
-	descriptor->data = u80211_drv_kernel_allocate(size);
-	if (descriptor->data == NULL)
-		return U80211_STATUS_ENOMEM;
+	void *buffer;
+	int status = u80211_drv_rtl8188eu_tx_buffer_allocate(size, &buffer);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		return status_to_u80211(status);
 
+	descriptor->data = buffer;
 	descriptor->size = size;
 	descriptor->current_offset = size;
 	return U80211_STATUS_SUCCESS;
@@ -43,7 +52,8 @@ static int allocate_tx_buffer(u80211_device_t *device, size_t size, u80211_tx_bu
 
 static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor) {
 	(void)device;
-	u80211_drv_kernel_free(descriptor->data);
+	u80211_drv_rtl8188eu_tx_buffer_free(descriptor->data);
+
 	descriptor->data = NULL;
 	descriptor->size = 0;
 	descriptor->current_offset = 0;
@@ -51,8 +61,16 @@ static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t
 }
 
 static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor) {
-	free_tx_buffer(device, descriptor);
-	return U80211_STATUS_UNSUPPORTED;
+	u80211_drv_rtl8188eu_t *rtl8188eu = device->driver_data;
+	int status = u80211_drv_rtl8188eu_transmit(rtl8188eu, descriptor->data, descriptor->size, descriptor->current_offset);
+
+	descriptor->data = NULL;
+	descriptor->size = 0;
+	descriptor->current_offset = 0;
+	int u80211_status = status_to_u80211(status);
+	if (u80211_status != U80211_STATUS_SUCCESS)
+		__atomic_store_n(&scan_tx_status, u80211_status, __ATOMIC_RELEASE);
+	return u80211_status;
 }
 
 static int set_channel(u80211_device_t *device, int channel) {
@@ -104,6 +122,7 @@ static int print_scan_results(u80211_device_t *device) {
 
 int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadata_t *driver_metadata) {
 	ready_callback_called = true;
+	__atomic_store_n(&scan_tx_status, U80211_STATUS_SUCCESS, __ATOMIC_RELAXED);
 
 	u80211_device_metadata_t metadata = {0};
 	memcpy(metadata.mac_address.bytes, driver_metadata->mac_address, sizeof(metadata.mac_address.bytes));
@@ -120,6 +139,11 @@ int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadat
 	status = u80211_wait_for_scan_completion(device);
 	if (status != U80211_STATUS_SUCCESS)
 		goto unregister;
+	status = __atomic_load_n(&scan_tx_status, __ATOMIC_ACQUIRE);
+	if (status != U80211_STATUS_SUCCESS) {
+		fprintf(stderr, "scan probe transmission failed: %d\n", status);
+		goto unregister;
+	}
 	status = print_scan_results(device);
 
 unregister:
@@ -203,6 +227,17 @@ int main(void) {
 		return TEST_FAILURE;
 	}
 
+	libusb_set_auto_detach_kernel_driver(matched_device, 1);
+	usb_status = libusb_claim_interface(matched_device, matched_interface->bInterfaceNumber);
+	if (usb_status != LIBUSB_SUCCESS) {
+		fprintf(stderr, "USB interface claim failed: %s\n", libusb_error_name(usb_status));
+		libusb_close(matched_device);
+		libusb_free_config_descriptor(matched_config);
+		libusb_free_device_list(devices, 1);
+		libusb_exit(usb_context);
+		return TEST_FAILURE;
+	}
+
 	int attach_status = u80211_drv_attach(matched_device, (void *)matched_interface);
 	int result = TEST_FAILURE;
 	if (attach_status != U80211_DRV_STATUS_SUCCESS)
@@ -216,6 +251,7 @@ int main(void) {
 		result = 0;
 	}
 
+	libusb_release_interface(matched_device, matched_interface->bInterfaceNumber);
 	libusb_close(matched_device);
 	libusb_free_config_descriptor(matched_config);
 	libusb_free_device_list(devices, 1);

@@ -84,5 +84,6 @@ int u80211_drv_kernel_submit_xfer(u80211_drv_transfer_handle_t transfer);
 void u80211_drv_kernel_stall_us(unsigned int microseconds);
 void u80211_drv_kernel_print(int level, const char *msg);
 int u80211_drv_device_ready(void *device, const u80211_drv_device_metadata_t *metadata, const u80211_drv_device_ops_t *ops, u80211_drv_network_device_handle_t *network_device);
+void u80211_drv_packet_received(u80211_drv_network_device_handle_t device, void *packet, size_t packet_size);
 
 #endif

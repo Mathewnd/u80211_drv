@@ -20,38 +20,24 @@ enum {
 static bool ready_callback_called;
 static int ready_callback_status = U80211_DRV_STATUS_UNKNOWN_ERROR;
 static int scan_tx_status = U80211_STATUS_SUCCESS;
+static pthread_t usb_event_thread;
 
 typedef struct {
 	void *device;
 	const u80211_drv_device_ops_t *ops;
+	pthread_mutex_t receive_mutex;
+	u80211_device_t *u80211_device;
 } test_device_t;
 
-typedef struct {
-	libusb_context *context;
-	pthread_t thread;
-	bool stopping;
-} usb_event_thread_t;
-
 static void *usb_event_loop(void *context) {
-	usb_event_thread_t *event_thread = context;
-	while (!__atomic_load_n(&event_thread->stopping, __ATOMIC_ACQUIRE)) {
-		int status = libusb_handle_events(event_thread->context);
-		if (status != LIBUSB_SUCCESS && status != LIBUSB_ERROR_INTERRUPTED)
-			break;
-	}
+	libusb_context *usb_context = context;
+	for (;;)
+		libusb_handle_events(usb_context);
 	return NULL;
 }
 
-static int start_usb_event_thread(usb_event_thread_t *event_thread, libusb_context *context) {
-	event_thread->context = context;
-	__atomic_store_n(&event_thread->stopping, false, __ATOMIC_RELAXED);
-	return pthread_create(&event_thread->thread, NULL, usb_event_loop, event_thread) == 0 ? U80211_DRV_STATUS_SUCCESS : U80211_DRV_STATUS_UNKNOWN_ERROR;
-}
-
-static void stop_usb_event_thread(usb_event_thread_t *event_thread) {
-	__atomic_store_n(&event_thread->stopping, true, __ATOMIC_RELEASE);
-	libusb_interrupt_event_handler(event_thread->context);
-	pthread_join(event_thread->thread, NULL);
+static int start_usb_event_thread(libusb_context *context) {
+	return pthread_create(&usb_event_thread, NULL, usb_event_loop, context) == 0 ? U80211_DRV_STATUS_SUCCESS : U80211_DRV_STATUS_UNKNOWN_ERROR;
 }
 
 static int status_to_u80211(int status) {
@@ -153,23 +139,48 @@ static int print_scan_results(u80211_device_t *device) {
 	return ap_count == cache_count ? U80211_STATUS_SUCCESS : U80211_STATUS_UNKNOWN_ERROR;
 }
 
+void u80211_drv_packet_received(u80211_drv_network_device_handle_t network_device, void *packet, size_t packet_size) {
+	test_device_t *test_device = network_device;
+	pthread_mutex_lock(&test_device->receive_mutex);
+	u80211_device_t *device = test_device->u80211_device;
+	if (device != NULL)
+		u80211_process_packet(device, packet, packet_size);
+	pthread_mutex_unlock(&test_device->receive_mutex);
+}
+
 int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadata_t *driver_metadata, const u80211_drv_device_ops_t *driver_ops, u80211_drv_network_device_handle_t *network_device) {
 	ready_callback_called = true;
 	__atomic_store_n(&scan_tx_status, U80211_STATUS_SUCCESS, __ATOMIC_RELAXED);
-	test_device_t test_device = {
+	test_device_t *test_device = malloc(sizeof(*test_device));
+	if (test_device == NULL) {
+		ready_callback_status = U80211_DRV_STATUS_OUT_OF_MEMORY;
+		return ready_callback_status;
+	}
+	*test_device = (test_device_t){
 		.device = driver_device,
 		.ops = driver_ops,
+		.u80211_device = NULL,
 	};
+	if (pthread_mutex_init(&test_device->receive_mutex, NULL) != 0) {
+		free(test_device);
+		ready_callback_status = U80211_DRV_STATUS_UNKNOWN_ERROR;
+		return ready_callback_status;
+	}
 
 	u80211_device_metadata_t metadata = {0};
 	memcpy(metadata.mac_address.bytes, driver_metadata->mac_address, sizeof(metadata.mac_address.bytes));
 	memcpy(metadata.rate_bitmap, driver_metadata->rate_bitmap, sizeof(metadata.rate_bitmap));
 
 	u80211_device_t *device = NULL;
-	int status = u80211_register_device(&metadata, &device_ops, &test_device, &device);
-	if (status != U80211_STATUS_SUCCESS)
+	int status = u80211_register_device(&metadata, &device_ops, test_device, &device);
+	if (status != U80211_STATUS_SUCCESS) {
+		pthread_mutex_destroy(&test_device->receive_mutex);
+		free(test_device);
 		goto done;
-	*network_device = device;
+	}
+
+	test_device->u80211_device = device;
+	__atomic_store_n(network_device, test_device, __ATOMIC_RELEASE);
 
 	status = u80211_scan(device);
 	if (status != U80211_STATUS_SUCCESS)
@@ -185,7 +196,9 @@ int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadat
 	status = print_scan_results(device);
 
 unregister:
-	*network_device = NULL;
+	pthread_mutex_lock(&test_device->receive_mutex);
+	test_device->u80211_device = NULL;
+	pthread_mutex_unlock(&test_device->receive_mutex);
 	u80211_unregister_device(device);
 done:
 	ready_callback_status = status == U80211_STATUS_SUCCESS
@@ -277,8 +290,7 @@ int main(void) {
 		return TEST_FAILURE;
 	}
 
-	usb_event_thread_t event_thread;
-	if (start_usb_event_thread(&event_thread, usb_context) != U80211_DRV_STATUS_SUCCESS) {
+	if (start_usb_event_thread(usb_context) != U80211_DRV_STATUS_SUCCESS) {
 		fprintf(stderr, "USB event thread initialization failed\n");
 		libusb_release_interface(matched_device, matched_interface->bInterfaceNumber);
 		libusb_close(matched_device);
@@ -301,11 +313,5 @@ int main(void) {
 		result = 0;
 	}
 
-	stop_usb_event_thread(&event_thread);
-	libusb_release_interface(matched_device, matched_interface->bInterfaceNumber);
-	libusb_close(matched_device);
-	libusb_free_config_descriptor(matched_config);
-	libusb_free_device_list(devices, 1);
-	libusb_exit(usb_context);
 	return result;
 }

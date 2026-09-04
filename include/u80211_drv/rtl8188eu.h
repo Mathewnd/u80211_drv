@@ -272,6 +272,8 @@
 #define U80211_DRV_RTL8188EU_TRXDMA_QUEUE_NORMAL 2
 #define U80211_DRV_RTL8188EU_TRXDMA_QUEUE_HIGH 3
 
+#define U80211_DRV_RTL8188EU_RX_SLOT_COUNT 4
+
 typedef enum {
 	U80211_DRV_RTL8188EU_ACCESS_CATEGORY_VO,
 	U80211_DRV_RTL8188EU_ACCESS_CATEGORY_VI,
@@ -296,10 +298,19 @@ typedef struct {
 	uint8_t xtal_k;
 } u80211_drv_rtl8188eu_efuse_t;
 
+typedef struct u80211_drv_rtl8188eu u80211_drv_rtl8188eu_t;
+
 typedef struct {
+	u80211_drv_rtl8188eu_t *rtl8188eu;
+	void *buffer;
+	u80211_drv_transfer_handle_t transfer;
+} u80211_drv_rtl8188eu_rx_slot_t;
+
+struct u80211_drv_rtl8188eu {
 	u80211_drv_device_handle_t device;
 	u80211_drv_interface_handle_t interface;
 	u80211_drv_network_device_handle_t network_device;
+	uint8_t rx_endpoint;
 	uint8_t bulk_out_endpoint_count;
 	uint8_t tx_endpoint_high;
 	uint8_t tx_endpoint_normal;
@@ -307,7 +318,8 @@ typedef struct {
 	bool cck_high_power;
 	uint32_t rf_chnlbw;
 	u80211_drv_rtl8188eu_efuse_t efuse;
-} u80211_drv_rtl8188eu_t;
+	u80211_drv_rtl8188eu_rx_slot_t rx_slots[U80211_DRV_RTL8188EU_RX_SLOT_COUNT];
+};
 
 int u80211_drv_rtl8188eu_efuse_prepare(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_efuse_finish(u80211_drv_device_handle_t device);
@@ -344,6 +356,7 @@ int u80211_drv_rtl8188eu_set_channel(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t 
 int u80211_drv_rtl8188eu_tx_buffer_allocate(size_t size, void **buffer);
 void u80211_drv_rtl8188eu_tx_buffer_free(void *buffer);
 int u80211_drv_rtl8188eu_transmit(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, size_t size, size_t current_offset);
+int u80211_drv_rtl8188eu_rx_start(u80211_drv_rtl8188eu_t *rtl8188eu);
 
 int u80211_drv_rtl8188eu_calibrate(u80211_drv_device_handle_t device);
 

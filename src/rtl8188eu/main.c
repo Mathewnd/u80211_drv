@@ -30,7 +30,7 @@ static const u80211_drv_device_ops_t device_ops = {
 	.set_channel = set_channel,
 };
 
-static int discover_bulk_out_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
+static int discover_bulk_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
 	u80211_drv_interface_descriptor_t interface_descriptor;
 	int status = u80211_drv_kernel_get_interface_descriptor(rtl8188eu->interface, &interface_descriptor);
 	if (status != U80211_DRV_STATUS_SUCCESS)
@@ -50,14 +50,19 @@ static int discover_bulk_out_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
 	}
 
 	rtl8188eu->bulk_out_endpoint_count = 0;
+	rtl8188eu->rx_endpoint = 0;
 	rtl8188eu->tx_endpoint_high = 0;
 	rtl8188eu->tx_endpoint_normal = 0;
 	rtl8188eu->tx_endpoint_low = 0;
 
 	for (uint8_t i = 0; i < interface_descriptor.endpoint_count; ++i) {
-		if ((endpoints[i].address & U80211_DRV_KERNEL_XFER_DIRECTION_MASK) != U80211_DRV_KERNEL_XFER_OUT ||
-				(endpoints[i].attributes & U80211_DRV_KERNEL_ENDPOINT_TRANSFER_TYPE_MASK) != U80211_DRV_KERNEL_ENDPOINT_TRANSFER_TYPE_BULK)
+		if ((endpoints[i].attributes & U80211_DRV_KERNEL_ENDPOINT_TRANSFER_TYPE_MASK) != U80211_DRV_KERNEL_ENDPOINT_TRANSFER_TYPE_BULK)
 			continue;
+		if ((endpoints[i].address & U80211_DRV_KERNEL_XFER_DIRECTION_MASK) == U80211_DRV_KERNEL_XFER_IN) {
+			if (rtl8188eu->rx_endpoint == 0)
+				rtl8188eu->rx_endpoint = endpoints[i].address;
+			continue;
+		}
 
 		switch (rtl8188eu->bulk_out_endpoint_count) {
 			case 0:
@@ -76,7 +81,7 @@ static int discover_bulk_out_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
 
 	u80211_drv_kernel_free(endpoints);
 
-	if (rtl8188eu->bulk_out_endpoint_count == 0)
+	if (rtl8188eu->rx_endpoint == 0 || rtl8188eu->bulk_out_endpoint_count == 0)
 		return U80211_DRV_STATUS_NOT_SUPPORTED;
 
 	return U80211_DRV_STATUS_SUCCESS;
@@ -234,6 +239,12 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: activity LED enabled");
 
+	status = u80211_drv_rtl8188eu_rx_start(rtl8188eu);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: RX started");
+
 	u80211_drv_device_metadata_t metadata = {
 		.rate_bitmap = {
 			0x14, // 1 and 2 Mbps
@@ -284,10 +295,10 @@ int u80211_drv_rtl8188eu_init(u80211_drv_device_handle_t device, u80211_drv_inte
 
 	rtl8188eu->device = device;
 	rtl8188eu->interface = interface;
-	rtl8188eu->network_device = NULL;
+	__atomic_store_n(&rtl8188eu->network_device, NULL, __ATOMIC_RELAXED);
 
-	// this is nescessary to do now to properly set up the TX queues later
-	status = discover_bulk_out_endpoints(rtl8188eu);
+	// this is necessary to set up the TX queues and submit RX transfers later
+	status = discover_bulk_endpoints(rtl8188eu);
 	if (status != U80211_DRV_STATUS_SUCCESS) {
 		u80211_drv_kernel_free(rtl8188eu);
 		return status;

@@ -8,7 +8,6 @@
 
 #include <u80211/status.h>
 #include <u80211/u80211.h>
-#include <u80211_drv/rtl8188eu.h>
 #include <u80211_drv/status.h>
 #include <u80211_drv/u80211_drv.h>
 
@@ -20,6 +19,11 @@ enum {
 static bool ready_callback_called;
 static int ready_callback_status = U80211_DRV_STATUS_UNKNOWN_ERROR;
 static int scan_tx_status = U80211_STATUS_SUCCESS;
+
+typedef struct {
+	void *device;
+	const u80211_drv_device_ops_t *ops;
+} test_device_t;
 
 static int status_to_u80211(int status) {
 	if (status == U80211_DRV_STATUS_SUCCESS)
@@ -38,9 +42,9 @@ static int status_to_u80211(int status) {
 }
 
 static int allocate_tx_buffer(u80211_device_t *device, size_t size, u80211_tx_buffer_descriptor_t *descriptor) {
-	(void)device;
+	test_device_t *test_device = device->driver_data;
 	void *buffer;
-	int status = u80211_drv_rtl8188eu_tx_buffer_allocate(size, &buffer);
+	int status = test_device->ops->allocate_tx_buffer(size, &buffer);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		return status_to_u80211(status);
 
@@ -51,8 +55,8 @@ static int allocate_tx_buffer(u80211_device_t *device, size_t size, u80211_tx_bu
 }
 
 static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor) {
-	(void)device;
-	u80211_drv_rtl8188eu_tx_buffer_free(descriptor->data);
+	test_device_t *test_device = device->driver_data;
+	test_device->ops->free_tx_buffer(descriptor->data);
 
 	descriptor->data = NULL;
 	descriptor->size = 0;
@@ -61,8 +65,8 @@ static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t
 }
 
 static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor) {
-	u80211_drv_rtl8188eu_t *rtl8188eu = device->driver_data;
-	int status = u80211_drv_rtl8188eu_transmit(rtl8188eu, descriptor->data, descriptor->size, descriptor->current_offset);
+	test_device_t *test_device = device->driver_data;
+	int status = test_device->ops->transmit(test_device->device, descriptor->data, descriptor->size, descriptor->current_offset);
 
 	descriptor->data = NULL;
 	descriptor->size = 0;
@@ -77,8 +81,8 @@ static int set_channel(u80211_device_t *device, int channel) {
 	if (channel < 1 || channel > UINT8_MAX)
 		return U80211_STATUS_NOT_PERMITTED;
 
-	u80211_drv_rtl8188eu_t *rtl8188eu = device->driver_data;
-	return status_to_u80211(u80211_drv_rtl8188eu_set_channel(rtl8188eu, (uint8_t)channel));
+	test_device_t *test_device = device->driver_data;
+	return status_to_u80211(test_device->ops->set_channel(test_device->device, (uint8_t)channel));
 }
 
 static const u80211_device_ops_t device_ops = {
@@ -120,18 +124,23 @@ static int print_scan_results(u80211_device_t *device) {
 	return ap_count == cache_count ? U80211_STATUS_SUCCESS : U80211_STATUS_UNKNOWN_ERROR;
 }
 
-int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadata_t *driver_metadata) {
+int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadata_t *driver_metadata, const u80211_drv_device_ops_t *driver_ops, u80211_drv_network_device_handle_t *network_device) {
 	ready_callback_called = true;
 	__atomic_store_n(&scan_tx_status, U80211_STATUS_SUCCESS, __ATOMIC_RELAXED);
+	test_device_t test_device = {
+		.device = driver_device,
+		.ops = driver_ops,
+	};
 
 	u80211_device_metadata_t metadata = {0};
 	memcpy(metadata.mac_address.bytes, driver_metadata->mac_address, sizeof(metadata.mac_address.bytes));
 	memcpy(metadata.rate_bitmap, driver_metadata->rate_bitmap, sizeof(metadata.rate_bitmap));
 
 	u80211_device_t *device = NULL;
-	int status = u80211_register_device(&metadata, &device_ops, driver_device, &device);
+	int status = u80211_register_device(&metadata, &device_ops, &test_device, &device);
 	if (status != U80211_STATUS_SUCCESS)
 		goto done;
+	*network_device = device;
 
 	status = u80211_scan(device);
 	if (status != U80211_STATUS_SUCCESS)
@@ -147,6 +156,7 @@ int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadat
 	status = print_scan_results(device);
 
 unregister:
+	*network_device = NULL;
 	u80211_unregister_device(device);
 done:
 	ready_callback_status = status == U80211_STATUS_SUCCESS

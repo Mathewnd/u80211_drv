@@ -15,6 +15,21 @@ static int u80211_drv_rtl8188eu_led_enable_activity(u80211_drv_device_handle_t d
 	return u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_LEDCFG2, ledcfg);
 }
 
+static int transmit(void *device, void *buffer, size_t size, size_t current_offset) {
+	return u80211_drv_rtl8188eu_transmit(device, buffer, size, current_offset);
+}
+
+static int set_channel(void *device, uint8_t channel) {
+	return u80211_drv_rtl8188eu_set_channel(device, channel);
+}
+
+static const u80211_drv_device_ops_t device_ops = {
+	.allocate_tx_buffer = u80211_drv_rtl8188eu_tx_buffer_allocate,
+	.free_tx_buffer = u80211_drv_rtl8188eu_tx_buffer_free,
+	.transmit = transmit,
+	.set_channel = set_channel,
+};
+
 static int discover_bulk_out_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {
 	u80211_drv_interface_descriptor_t interface_descriptor;
 	int status = u80211_drv_kernel_get_interface_descriptor(rtl8188eu->interface, &interface_descriptor);
@@ -242,7 +257,7 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 	for (size_t i = 0; i < U80211_DRV_DEVICE_MAC_ADDRESS_LEN; ++i)
 		metadata.mac_address[i] = rtl8188eu->efuse.mac_address[i];
 
-	status = u80211_drv_device_ready(rtl8188eu, &metadata);
+	status = u80211_drv_device_ready(rtl8188eu, &metadata, &device_ops, &rtl8188eu->network_device);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto error;
 
@@ -269,6 +284,7 @@ int u80211_drv_rtl8188eu_init(u80211_drv_device_handle_t device, u80211_drv_inte
 
 	rtl8188eu->device = device;
 	rtl8188eu->interface = interface;
+	rtl8188eu->network_device = NULL;
 
 	// this is nescessary to do now to properly set up the TX queues later
 	status = discover_bulk_out_endpoints(rtl8188eu);

@@ -299,6 +299,7 @@ typedef struct {
 typedef struct {
 	u80211_drv_device_handle_t device;
 	u80211_drv_interface_handle_t interface;
+	u80211_drv_network_device_handle_t network_device;
 	uint8_t bulk_out_endpoint_count;
 	uint8_t tx_endpoint_high;
 	uint8_t tx_endpoint_normal;

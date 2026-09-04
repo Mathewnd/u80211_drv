@@ -162,6 +162,9 @@
 #define U80211_DRV_RTL8188EU_REG_DRVERLYINT 0x0558
 #define U80211_DRV_RTL8188EU_REG_BCNDMATIM 0x0559
 
+#define U80211_DRV_RTL8188EU_REG_BWOPMODE 0x0603
+#define U80211_DRV_RTL8188EU_REG_BWOPMODE_20MHZ (1u << 2)
+
 #define U80211_DRV_RTL8188EU_REG_RCR 0x0608
 #define U80211_DRV_RTL8188EU_REG_RCR_AAP (1u << 0)
 #define U80211_DRV_RTL8188EU_REG_RCR_APM (1u << 1)
@@ -201,6 +204,7 @@
 #define U80211_DRV_RTL8188EU_REG_RXFLTMAP2 0x06a4
 
 #define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD 0x0800
+#define U80211_DRV_RTL8188EU_REG_FPGA_RFMOD_40MHZ (1u << 0)
 #define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_CCK_ENABLE (1u << 24)
 #define U80211_DRV_RTL8188EU_REG_FPGA0_RFMOD_OFDM_ENABLE (1u << 25)
 
@@ -232,6 +236,10 @@
 #define U80211_DRV_RTL8188EU_REG_HSPI_READBACK_A 0x08b8
 #define U80211_DRV_RTL8188EU_RF_READBACK_MASK 0x000fffff
 #define U80211_DRV_RTL8188EU_RF_CHNLBW 0x18
+#define U80211_DRV_RTL8188EU_RF_CHNLBW_CHANNEL_BW_MASK 0x00000fff
+#define U80211_DRV_RTL8188EU_RF_CHNLBW_BW20 0x00000c00
+
+#define U80211_DRV_RTL8188EU_REG_FPGA1_RFMOD 0x0900
 
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1 0x0c50
 #define U80211_DRV_RTL8188EU_REG_OFDM0_AGCCORE1_LATCH 0x69553422
@@ -320,6 +328,7 @@ int u80211_drv_rtl8188eu_rf_write(u80211_drv_device_handle_t device, uint8_t rf_
 int u80211_drv_rtl8188eu_rf_read(u80211_drv_device_handle_t device, uint8_t rf_reg, uint32_t *value);
 int u80211_drv_rtl8188eu_rf_load_table(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_set_tx_power(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t channel);
+int u80211_drv_rtl8188eu_set_channel(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t channel);
 int u80211_drv_rtl8188eu_calibrate(u80211_drv_device_handle_t device);
 int u80211_drv_rtl8188eu_firmware_prepare(u80211_drv_device_handle_t device, const void *firmware_data, size_t firmware_size, const uint8_t **firmware_payload, size_t *firmware_payload_size);
 int u80211_drv_rtl8188eu_firmware_upload(u80211_drv_device_handle_t device, const uint8_t *firmware_payload, size_t firmware_payload_size);

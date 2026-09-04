@@ -1,6 +1,7 @@
 rtl8188eu_library = static_library(
   'rtl8188eu',
   'bb_table.c',
+  'channel.c',
   'efuse.c',
   'firmware.c',
   'calibration.c',

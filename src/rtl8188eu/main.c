@@ -196,6 +196,12 @@ static void firmware_loaded(void *context, const void *firmware_data, size_t fir
 
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: RF calibration complete");
 
+	status = u80211_drv_rtl8188eu_set_channel(rtl8188eu, 1);
+	if (status != U80211_DRV_STATUS_SUCCESS)
+		goto error;
+
+	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_INFO, "rtl8188eu: channel 1 configured");
+
 	return;
 error:
 	u80211_drv_kernel_print(U80211_DRV_KERNEL_PRINT_LEVEL_ERROR, "rtl8188eu: post firmware initialization failed");

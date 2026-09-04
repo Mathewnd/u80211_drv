@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <stdbool.h>
@@ -28,6 +29,14 @@ typedef struct {
 	u80211_kernel_work_fn_t function;
 	void *context;
 } u80211_test_work_t;
+
+typedef struct {
+	struct libusb_transfer *transfer;
+	u80211_drv_kernel_transfer_callback_t callback;
+	void *context;
+	pthread_mutex_t mutex;
+	bool active;
+} u80211_test_transfer_t;
 
 static int u80211_drv_kernel_status_from_libusb(int status) {
 	if (status == LIBUSB_SUCCESS)
@@ -137,6 +146,72 @@ int u80211_drv_kernel_submit_bulk_xfer_and_wait(u80211_drv_device_handle_t devic
 
 	*transferred_size = transferred;
 	return U80211_DRV_STATUS_SUCCESS;
+}
+
+static int u80211_test_transfer_status(enum libusb_transfer_status status) {
+	switch (status) {
+		case LIBUSB_TRANSFER_COMPLETED:
+			return U80211_DRV_STATUS_SUCCESS;
+		case LIBUSB_TRANSFER_TIMED_OUT:
+			return U80211_DRV_STATUS_TIMEOUT;
+		default:
+			return U80211_DRV_STATUS_UNKNOWN_ERROR;
+	}
+}
+
+static void LIBUSB_CALL u80211_test_transfer_complete(struct libusb_transfer *usb_transfer) {
+	u80211_test_transfer_t *transfer = usb_transfer->user_data;
+
+	pthread_mutex_lock(&transfer->mutex);
+	transfer->active = false;
+	pthread_mutex_unlock(&transfer->mutex);
+
+	transfer->callback(transfer->context, u80211_test_transfer_status(usb_transfer->status), usb_transfer->status == LIBUSB_TRANSFER_COMPLETED ? (size_t)usb_transfer->actual_length : 0);
+}
+
+int u80211_drv_kernel_allocate_bulk_xfer(u80211_drv_device_handle_t device, uint8_t endpoint_address, void *buffer, size_t buffer_size, u80211_drv_kernel_transfer_callback_t callback, void *context, u80211_drv_transfer_handle_t *transfer_out) {
+	u80211_test_transfer_t *transfer = calloc(1, sizeof(*transfer));
+	if (transfer == NULL)
+		return U80211_DRV_STATUS_OUT_OF_MEMORY;
+
+	if (pthread_mutex_init(&transfer->mutex, NULL) != 0) {
+		free(transfer);
+		return U80211_DRV_STATUS_OUT_OF_MEMORY;
+	}
+
+	transfer->transfer = libusb_alloc_transfer(0);
+	if (transfer->transfer == NULL) {
+		pthread_mutex_destroy(&transfer->mutex);
+		free(transfer);
+		return U80211_DRV_STATUS_OUT_OF_MEMORY;
+	}
+
+	transfer->callback = callback;
+	transfer->context = context;
+	libusb_fill_bulk_transfer(transfer->transfer, device, endpoint_address, buffer, (int)buffer_size, u80211_test_transfer_complete, transfer, 0);
+	*transfer_out = transfer;
+	return U80211_DRV_STATUS_SUCCESS;
+}
+
+int u80211_drv_kernel_submit_xfer(u80211_drv_transfer_handle_t opaque_transfer) {
+	u80211_test_transfer_t *transfer = opaque_transfer;
+
+	pthread_mutex_lock(&transfer->mutex);
+	if (transfer->active) {
+		pthread_mutex_unlock(&transfer->mutex);
+		return U80211_DRV_STATUS_INVALID_ARGUMENT;
+	}
+	transfer->active = true;
+	pthread_mutex_unlock(&transfer->mutex);
+
+	int usb_status = libusb_submit_transfer(transfer->transfer);
+	if (usb_status == LIBUSB_SUCCESS)
+		return U80211_DRV_STATUS_SUCCESS;
+
+	pthread_mutex_lock(&transfer->mutex);
+	transfer->active = false;
+	pthread_mutex_unlock(&transfer->mutex);
+	return u80211_drv_kernel_status_from_libusb(usb_status);
 }
 
 void u80211_drv_kernel_stall_us(unsigned int microseconds) {

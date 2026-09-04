@@ -6,9 +6,11 @@
 
 typedef void *u80211_drv_device_handle_t;
 typedef void *u80211_drv_interface_handle_t;
+typedef void *u80211_drv_transfer_handle_t;
 typedef void *u80211_drv_network_device_handle_t;
 
 typedef void (*u80211_drv_kernel_firmware_callback_t)(void *context, const void *firmware_data, size_t firmware_size);
+typedef void (*u80211_drv_kernel_transfer_callback_t)(void *context, int status, size_t transferred_size);
 
 typedef struct {
 	uint16_t vendor_id;
@@ -77,6 +79,8 @@ int u80211_drv_kernel_get_interface_descriptor(u80211_drv_interface_handle_t int
 int u80211_drv_kernel_get_endpoints(u80211_drv_interface_handle_t interface, u80211_drv_endpoint_descriptor_t *endpoints, size_t endpoint_count);
 int u80211_drv_kernel_submit_control_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t flags, uint8_t request, uint16_t value, uint16_t index, void *buf, uint16_t buffer_size, size_t *transferred_size, unsigned int timeout);
 int u80211_drv_kernel_submit_bulk_xfer_and_wait(u80211_drv_device_handle_t device, uint8_t endpoint_address, void *buf, size_t buffer_size, size_t *transferred_size, unsigned int timeout);
+int u80211_drv_kernel_allocate_bulk_xfer(u80211_drv_device_handle_t device, uint8_t endpoint_address, void *buffer, size_t buffer_size, u80211_drv_kernel_transfer_callback_t callback, void *context, u80211_drv_transfer_handle_t *transfer);
+int u80211_drv_kernel_submit_xfer(u80211_drv_transfer_handle_t transfer);
 void u80211_drv_kernel_stall_us(unsigned int microseconds);
 void u80211_drv_kernel_print(int level, const char *msg);
 int u80211_drv_device_ready(void *device, const u80211_drv_device_metadata_t *metadata, const u80211_drv_device_ops_t *ops, u80211_drv_network_device_handle_t *network_device);

@@ -1,6 +1,6 @@
 [wrap-git]
 url = https://github.com/Mathewnd/u80211.git
-revision = be481eb9d44ced59d9d1b35fd522bec24d0c98a8
+revision = f368ca4e334a415f37ece34c1668cbc21bc0e43d
 depth = 1
 patch_directory = u80211
 

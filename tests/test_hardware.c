@@ -372,7 +372,7 @@ int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadat
 	}
 	u80211_mac_address_t bssid = ap->mac_address;
 
-	status = u80211_associate(device, ap);
+	status = u80211_associate(device, ap, NULL, 0);
 	u80211_ap_release(ap);
 	if (status != U80211_STATUS_SUCCESS) {
 		fprintf(stderr, "could not start association with astral ftw: status %d\n", status);

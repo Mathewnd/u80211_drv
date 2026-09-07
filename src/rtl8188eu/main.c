@@ -15,8 +15,8 @@ static int u80211_drv_rtl8188eu_led_enable_activity(u80211_drv_device_handle_t d
 	return u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_LEDCFG2, ledcfg);
 }
 
-static int transmit(void *device, void *buffer, size_t size, size_t current_offset) {
-	return u80211_drv_rtl8188eu_transmit(device, buffer, size, current_offset);
+static int transmit(void *device, void *buffer, size_t size, size_t current_offset, const u80211_drv_transmit_options_t *options) {
+	return u80211_drv_rtl8188eu_transmit(device, buffer, size, current_offset, options);
 }
 
 static int set_channel(void *device, uint8_t channel) {

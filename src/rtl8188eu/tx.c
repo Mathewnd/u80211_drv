@@ -50,9 +50,11 @@ static void calculate_checksum(uint8_t *descriptor) {
 	u80211_drv_serialize_le16(descriptor + 28, checksum);
 }
 
-static int build_descriptor(const uint8_t *frame, size_t frame_size, uint8_t *descriptor, uint8_t *queue_out) {
+static int build_descriptor(const uint8_t *frame, size_t frame_size, int key_index, uint8_t *descriptor, uint8_t *queue_out) {
 	if (frame_size < U80211_DRV_80211_HEADER_MINIMUM_SIZE)
 		return U80211_DRV_STATUS_MALFORMED_PACKET;
+	if (key_index < -1 || key_index > U80211_DRV_RTL8188EU_CAM_CTL0_KEY_ID_MASK)
+		return U80211_DRV_STATUS_INVALID_ARGUMENT;
 
 	uint16_t frame_control = u80211_drv_80211_frame_control(frame);
 	uint8_t frame_type = u80211_drv_80211_frame_type(frame_control);
@@ -129,14 +131,14 @@ void u80211_drv_rtl8188eu_tx_buffer_free(void *buffer) {
 	u80211_drv_kernel_free((uint8_t *)buffer - RTL8188EU_TX_DESCRIPTOR_SIZE);
 }
 
-int u80211_drv_rtl8188eu_transmit(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, size_t size, size_t current_offset) {
-	int status;
+int u80211_drv_rtl8188eu_transmit(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, size_t size, size_t current_offset, const u80211_drv_transmit_options_t *options) {
+	int key_index = options == NULL ? -1 : options->key;
 	uint8_t *frame = (uint8_t *)buffer + current_offset;
 	size_t frame_size = size - current_offset;
 	uint8_t *descriptor = frame - RTL8188EU_TX_DESCRIPTOR_SIZE;
 
 	uint8_t queue;
-	status = build_descriptor(frame, frame_size, descriptor, &queue);
+	int status = build_descriptor(frame, frame_size, key_index, descriptor, &queue);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto cleanup;
 

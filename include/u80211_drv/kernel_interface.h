@@ -60,9 +60,13 @@ typedef struct {
 } u80211_drv_key_t;
 
 typedef struct {
+	int key;
+} u80211_drv_transmit_options_t;
+
+typedef struct {
 	int (*allocate_tx_buffer)(size_t size, void **buffer);
 	void (*free_tx_buffer)(void *buffer);
-	int (*transmit)(void *device, void *buffer, size_t size, size_t current_offset);
+	int (*transmit)(void *device, void *buffer, size_t size, size_t current_offset, const u80211_drv_transmit_options_t *options);
 	int (*set_channel)(void *device, uint8_t channel);
 	int (*set_key)(void *device, const u80211_drv_key_t *key);
 	int (*del_key)(void *device, uint8_t index);

@@ -138,8 +138,10 @@ static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t
 
 static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor, const u80211_transmit_options_t *options) {
 	test_device_t *test_device = device->driver_data;
-	int key_index = options == NULL ? -1 : options->key;
-	int status = test_device->ops->transmit(test_device->device, descriptor->data, descriptor->size, descriptor->current_offset, key_index);
+	u80211_drv_transmit_options_t driver_options = {
+		.key = options == NULL ? -1 : options->key,
+	};
+	int status = test_device->ops->transmit(test_device->device, descriptor->data, descriptor->size, descriptor->current_offset, &driver_options);
 
 	descriptor->data = NULL;
 	descriptor->size = 0;

@@ -5,7 +5,7 @@
 
 #define U80211_WPAS_SOCKET_PATH "/tmp/.u80211_sock"
 #define U80211_WPAS_PROTOCOL_MAGIC UINT32_C(0x55383032)
-#define U80211_WPAS_PROTOCOL_VERSION UINT16_C(1)
+#define U80211_WPAS_PROTOCOL_VERSION UINT16_C(2)
 #define U80211_WPAS_MAX_PAYLOAD UINT32_C(65535)
 
 enum u80211_wpas_message_type {
@@ -15,6 +15,9 @@ enum u80211_wpas_message_type {
 	U80211_WPAS_REQUEST_ASSOCIATE = 4,
 	U80211_WPAS_REQUEST_DISASSOCIATE = 5,
 	U80211_WPAS_REQUEST_GET_LINK = 6,
+	U80211_WPAS_REQUEST_SET_KEY = 7,
+	U80211_WPAS_REQUEST_DELETE_KEY = 8,
+	U80211_WPAS_REQUEST_SET_OPERSTATE = 9,
 
 	U80211_WPAS_RESPONSE = 0x100,
 
@@ -44,6 +47,39 @@ typedef struct __attribute__((packed)) {
 	uint16_t information_elements_length;
 	/* Association-request information elements follow. */
 } u80211_wpas_associate_t;
+
+enum u80211_wpas_cipher {
+	U80211_WPAS_CIPHER_CCMP = 0,
+};
+
+enum u80211_wpas_key_flags {
+	U80211_WPAS_KEY_PAIRWISE = 1U << 0,
+	U80211_WPAS_KEY_GROUP = 1U << 1,
+	U80211_WPAS_KEY_RX = 1U << 2,
+	U80211_WPAS_KEY_TX = 1U << 3,
+};
+
+typedef struct __attribute__((packed)) {
+	uint8_t peer[6];
+	uint8_t cipher;
+	uint8_t key_index;
+	uint32_t flags;
+	uint16_t sequence_length;
+	uint16_t key_length;
+	/* Receive-sequence bytes followed by key bytes follow. */
+} u80211_wpas_set_key_t;
+
+typedef struct __attribute__((packed)) {
+	uint8_t peer[6];
+	uint8_t key_index;
+	uint8_t reserved;
+	uint32_t flags;
+} u80211_wpas_delete_key_t;
+
+typedef struct __attribute__((packed)) {
+	uint8_t up;
+	uint8_t reserved[3];
+} u80211_wpas_operstate_t;
 
 typedef struct __attribute__((packed)) {
 	uint32_t count;

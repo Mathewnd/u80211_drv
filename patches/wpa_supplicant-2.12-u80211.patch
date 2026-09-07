@@ -32,7 +32,7 @@
  DRV_OBJS += ../src/drivers/driver_wired.o
 --- /dev/null
 +++ b/src/drivers/driver_u80211.c
-@@ -0,0 +1,658 @@
+@@ -0,0 +1,694 @@
 +/*
 + * u80211 driver interface.  The actual 802.11 implementation lives in the
 + * u80211 test process; this wrapper transports control requests over the
@@ -51,7 +51,7 @@
 +/* Private protocol shared only with the u80211 hardware test harness. */
 +#define U80211_WPAS_SOCKET_PATH "/tmp/.u80211_sock"
 +#define U80211_WPAS_PROTOCOL_MAGIC 0x55383032U
-+#define U80211_WPAS_PROTOCOL_VERSION 1U
++#define U80211_WPAS_PROTOCOL_VERSION 2U
 +#define U80211_WPAS_MAX_PAYLOAD 65535U
 +
 +enum u80211_wpas_message_type {
@@ -61,6 +61,9 @@
 +	U80211_WPAS_REQUEST_ASSOCIATE = 4,
 +	U80211_WPAS_REQUEST_DISASSOCIATE = 5,
 +	U80211_WPAS_REQUEST_GET_LINK = 6,
++	U80211_WPAS_REQUEST_SET_KEY = 7,
++	U80211_WPAS_REQUEST_DELETE_KEY = 8,
++	U80211_WPAS_REQUEST_SET_OPERSTATE = 9,
 +	U80211_WPAS_RESPONSE = 0x100,
 +	U80211_WPAS_EVENT_SCAN_RESULTS = 0x200,
 +	U80211_WPAS_EVENT_ASSOCIATED = 0x201,
@@ -86,6 +89,39 @@
 +	u8 bssid[6];
 +	u16 information_elements_length;
 +} u80211_wpas_associate_t;
++
++enum u80211_wpas_cipher {
++	U80211_WPAS_CIPHER_CCMP = 0,
++};
++
++enum u80211_wpas_key_flags {
++	U80211_WPAS_KEY_PAIRWISE = 1U << 0,
++	U80211_WPAS_KEY_GROUP = 1U << 1,
++	U80211_WPAS_KEY_RX = 1U << 2,
++	U80211_WPAS_KEY_TX = 1U << 3,
++};
++
++typedef struct __attribute__((packed)) {
++	u8 peer[6];
++	u8 cipher;
++	u8 key_index;
++	u32 flags;
++	u16 sequence_length;
++	u16 key_length;
++	/* Receive-sequence bytes followed by key bytes follow. */
++} u80211_wpas_set_key_t;
++
++typedef struct __attribute__((packed)) {
++	u8 peer[6];
++	u8 key_index;
++	u8 reserved;
++	u32 flags;
++} u80211_wpas_delete_key_t;
++
++typedef struct __attribute__((packed)) {
++	u8 up;
++	u8 reserved[3];
++} u80211_wpas_operstate_t;
 +
 +typedef struct __attribute__((packed)) {
 +	u32 count;

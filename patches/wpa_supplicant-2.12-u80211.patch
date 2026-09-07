@@ -32,7 +32,7 @@
  DRV_OBJS += ../src/drivers/driver_wired.o
 --- /dev/null
 +++ b/src/drivers/driver_u80211.c
-@@ -0,0 +1,694 @@
+@@ -0,0 +1,822 @@
 +/*
 + * u80211 driver interface.  The actual 802.11 implementation lives in the
 + * u80211 test process; this wrapper transports control requests over the
@@ -590,6 +590,8 @@
 +{
 +	(void) priv;
 +	os_memset(capa, 0, sizeof(*capa));
++	capa->key_mgmt = WPA_DRIVER_CAPA_KEY_MGMT_WPA2_PSK;
++	capa->enc = WPA_DRIVER_CAPA_ENC_CCMP;
 +	capa->auth = WPA_DRIVER_AUTH_OPEN;
 +	return 0;
 +}
@@ -612,11 +614,136 @@
 +	return drv->ssid_len;
 +}
 +
++static int u80211_translate_key_flags(enum key_flag key_flag, int deleting,
++				      u32 *wire_flags)
++{
++	const enum key_flag supported = KEY_FLAG_DEFAULT | KEY_FLAG_RX |
++		KEY_FLAG_TX | KEY_FLAG_GROUP | KEY_FLAG_PAIRWISE;
++	int pairwise, group;
++	u32 flags = 0;
++
++	if ((key_flag & ~supported) != 0)
++		return -1;
++	pairwise = !!(key_flag & KEY_FLAG_PAIRWISE);
++	group = !!(key_flag & KEY_FLAG_GROUP);
++	if (pairwise == group)
++		return -1;
++	if (deleting) {
++		if (key_flag & (KEY_FLAG_DEFAULT | KEY_FLAG_RX | KEY_FLAG_TX))
++			return -1;
++	} else if (!(key_flag & (KEY_FLAG_RX | KEY_FLAG_TX))) {
++		return -1;
++	}
++
++	if (pairwise)
++		flags |= U80211_WPAS_KEY_PAIRWISE;
++	if (group)
++		flags |= U80211_WPAS_KEY_GROUP;
++	if (key_flag & KEY_FLAG_RX)
++		flags |= U80211_WPAS_KEY_RX;
++	if (key_flag & KEY_FLAG_TX)
++		flags |= U80211_WPAS_KEY_TX;
++	*wire_flags = flags;
++	return 0;
++}
++
++static int u80211_request_without_response(struct u80211_driver_data *drv,
++					   u16 type, const void *payload,
++					   size_t payload_len)
++{
++	u8 *response = NULL;
++	size_t response_len = 0;
++	int result;
++
++	result = u80211_request(drv, type, payload, payload_len, &response,
++				 &response_len);
++	os_free(response);
++	return result == 0 && response_len == 0 ? 0 : -1;
++}
++
++static int u80211_key_peer(struct u80211_driver_data *drv,
++			   const struct wpa_driver_set_key_params *params,
++			   u32 flags, u8 peer[ETH_ALEN])
++{
++	if (params->addr != NULL) {
++		os_memcpy(peer, params->addr, ETH_ALEN);
++		return 0;
++	}
++	if (flags & U80211_WPAS_KEY_GROUP) {
++		os_memset(peer, 0xff, ETH_ALEN);
++		return 0;
++	}
++	if (is_zero_ether_addr(drv->bssid))
++		return -1;
++	os_memcpy(peer, drv->bssid, ETH_ALEN);
++	return 0;
++}
++
 +static int u80211_set_key(void *priv, struct wpa_driver_set_key_params *params)
 +{
-+	(void) priv;
-+	/* Open networks never install keys; accept cleanup and reject all others. */
-+	return params != NULL && params->alg == WPA_ALG_NONE ? 0 : -1;
++	struct u80211_driver_data *drv = priv;
++	u32 flags;
++
++	if (params == NULL || params->key_idx < 0 || params->key_idx > 3 ||
++		params->link_id != -1)
++		return -1;
++
++	if (params->alg == WPA_ALG_NONE) {
++		u80211_wpas_delete_key_t request;
++
++		if (params->key_len != 0 || params->seq_len != 0 ||
++			u80211_translate_key_flags(params->key_flag, 1, &flags) < 0)
++			return -1;
++		os_memset(&request, 0, sizeof(request));
++		if (u80211_key_peer(drv, params, flags, request.peer) < 0)
++			return -1;
++		request.key_index = params->key_idx;
++		u80211_put_le32(&request.flags, flags);
++		return u80211_request_without_response(drv,
++			U80211_WPAS_REQUEST_DELETE_KEY, &request, sizeof(request));
++	}
++
++	if (params->alg == WPA_ALG_CCMP) {
++		u8 request_buffer[sizeof(u80211_wpas_set_key_t) + 6 + 16];
++		u80211_wpas_set_key_t *request = (void *) request_buffer;
++		u8 *variable_data = request_buffer + sizeof(*request);
++
++		if (params->key == NULL || params->key_len != 16 ||
++			(params->seq_len != 0 && params->seq_len != 6) ||
++			(params->seq_len != 0 && params->seq == NULL) ||
++			u80211_translate_key_flags(params->key_flag, 0, &flags) < 0)
++			return -1;
++		os_memset(request_buffer, 0, sizeof(request_buffer));
++		if (u80211_key_peer(drv, params, flags, request->peer) < 0)
++			return -1;
++		request->cipher = U80211_WPAS_CIPHER_CCMP;
++		request->key_index = params->key_idx;
++		u80211_put_le32(&request->flags, flags);
++		u80211_put_le16(&request->sequence_length, params->seq_len);
++		u80211_put_le16(&request->key_length, params->key_len);
++		if (params->seq_len != 0)
++			os_memcpy(variable_data, params->seq, params->seq_len);
++		os_memcpy(variable_data + params->seq_len, params->key,
++			  params->key_len);
++		return u80211_request_without_response(drv,
++			U80211_WPAS_REQUEST_SET_KEY, request_buffer,
++			sizeof(*request) + params->seq_len + params->key_len);
++	}
++
++	return -1;
++}
++
++static int u80211_set_operstate(void *priv, int state)
++{
++	struct u80211_driver_data *drv = priv;
++	u80211_wpas_operstate_t request;
++
++	if (state != 0 && state != 1)
++		return -1;
++	os_memset(&request, 0, sizeof(request));
++	request.up = state;
++	return u80211_request_without_response(drv,
++		U80211_WPAS_REQUEST_SET_OPERSTATE, &request, sizeof(request));
 +}
 +
 +static int u80211_scan2(void *priv, struct wpa_driver_scan_params *params)
@@ -722,6 +849,7 @@
 +	.get_bssid = u80211_get_bssid,
 +	.get_ssid = u80211_get_ssid,
 +	.set_key = u80211_set_key,
++	.set_operstate = u80211_set_operstate,
 +	.scan2 = u80211_scan2,
 +	.get_scan_results2 = u80211_get_scan_results2,
 +	.associate = u80211_associate,

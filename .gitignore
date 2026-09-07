@@ -2,5 +2,7 @@
 /builddir/
 /subprojects/u80211/
 /subprojects/packagecache/
+/wpa_install/
+/.wpa_install.*
 
 compile_commands.json

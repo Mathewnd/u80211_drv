@@ -23,6 +23,9 @@
 #include <u80211_drv/status.h>
 #include <u80211_drv/u80211_drv.h>
 
+#include "wpas_server.h"
+#include "wpas/wpas_protocol.h"
+
 enum {
 	TEST_FAILURE = 1,
 	TEST_SKIP = 77,
@@ -30,7 +33,6 @@ enum {
 
 static bool ready_callback_called;
 static int ready_callback_status = U80211_DRV_STATUS_UNKNOWN_ERROR;
-static int scan_tx_status = U80211_STATUS_SUCCESS;
 static pthread_t usb_event_thread;
 
 typedef struct {
@@ -40,6 +42,9 @@ typedef struct {
 	u80211_device_t *u80211_device;
 	int tap_fd;
 	pthread_t tap_thread;
+	bool tap_thread_started;
+	bool dhcp_started;
+	u80211_wpas_server_t *wpas_server;
 } test_device_t;
 
 static void *tap_io_loop(void *context) {
@@ -129,10 +134,7 @@ static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *desc
 	descriptor->data = NULL;
 	descriptor->size = 0;
 	descriptor->current_offset = 0;
-	int u80211_status = status_to_u80211(status);
-	if (u80211_status != U80211_STATUS_SUCCESS)
-		__atomic_store_n(&scan_tx_status, u80211_status, __ATOMIC_RELEASE);
-	return u80211_status;
+	return status_to_u80211(status);
 }
 
 static int set_channel(u80211_device_t *device, int channel) {
@@ -149,60 +151,6 @@ static const u80211_device_ops_t device_ops = {
 	.transmit = transmit,
 	.set_channel = set_channel,
 };
-
-static int print_scan_results(u80211_device_t *device) {
-	size_t cache_count = u80211_bss_cache_get_count(&device->bss_cache);
-	printf("scan complete: %zu access point%s\n", cache_count, cache_count == 1 ? "" : "s");
-	if (cache_count == 0)
-		return U80211_STATUS_SUCCESS;
-
-	u80211_ap_t **aps = malloc(cache_count * sizeof(*aps));
-	if (aps == NULL)
-		return U80211_STATUS_ENOMEM;
-
-	size_t ap_count = u80211_bss_cache_get_aps(&device->bss_cache, aps, cache_count);
-	for (size_t i = 0; i < ap_count; ++i) {
-		u80211_ap_t *ap = aps[i];
-		printf(
-			"SSID=\"%s\" channel=%u BSSID=%02x:%02x:%02x:%02x:%02x:%02x interval=%u capabilities=0x%04x rates=",
-			ap->ssid,
-			(unsigned int)ap->channel,
-			ap->mac_address.bytes[0], ap->mac_address.bytes[1], ap->mac_address.bytes[2],
-			ap->mac_address.bytes[3], ap->mac_address.bytes[4], ap->mac_address.bytes[5],
-			(unsigned int)ap->interval,
-			(unsigned int)ap->capabilities
-		);
-		for (size_t rate = 0; rate < sizeof(ap->rate_bitmap); ++rate)
-			printf("%s%02x", rate == 0 ? "" : ":", ap->rate_bitmap[rate]);
-		putchar('\n');
-		u80211_ap_release(ap);
-	}
-
-	free(aps);
-	return ap_count == cache_count ? U80211_STATUS_SUCCESS : U80211_STATUS_UNKNOWN_ERROR;
-}
-
-static u80211_ap_t *find_ap_by_ssid(u80211_device_t *device, const char *ssid) {
-	size_t capacity = u80211_bss_cache_get_count(&device->bss_cache);
-	if (capacity == 0)
-		return NULL;
-
-	u80211_ap_t **aps = malloc(capacity * sizeof(*aps));
-	if (aps == NULL)
-		return NULL;
-
-	size_t count = u80211_bss_cache_get_aps(&device->bss_cache, aps, capacity);
-	u80211_ap_t *match = NULL;
-	for (size_t i = 0; i < count; ++i) {
-		if (match == NULL && strcmp(aps[i]->ssid, ssid) == 0)
-			match = aps[i];
-		else
-			u80211_ap_release(aps[i]);
-	}
-
-	free(aps);
-	return match;
-}
 
 static void wait_for_association_work(void) {
 	unsigned int seconds = 6;
@@ -276,6 +224,18 @@ static int start_dhcp(void) {
 	return 0;
 }
 
+static void association_ready(void *context) {
+	test_device_t *test_device = context;
+	if (__atomic_exchange_n(&test_device->dhcp_started, true, __ATOMIC_ACQ_REL))
+		return;
+	if (!in_private_network_namespace()) {
+		fputs("skipping DHCP in the host network namespace; use run_with_ns.sh\n", stderr);
+		return;
+	}
+	if (start_dhcp() != 0)
+		fputs("could not launch isolated IPv4 DHCP on tap0\n", stderr);
+}
+
 static int open_tap(void) {
 	int tap = open("/dev/net/tun", O_RDWR);
 	if (tap < 0)
@@ -315,8 +275,6 @@ void u80211_kernel_receive_callback(u80211_device_t *device, void *buffer, size_
 
 int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadata_t *driver_metadata, const u80211_drv_device_ops_t *driver_ops, u80211_drv_network_device_handle_t *network_device) {
 	ready_callback_called = true;
-	__atomic_store_n(&scan_tx_status, U80211_STATUS_SUCCESS, __ATOMIC_RELAXED);
-	bool association_started = false;
 	test_device_t *test_device = malloc(sizeof(*test_device));
 	if (test_device == NULL) {
 		ready_callback_status = U80211_DRV_STATUS_OUT_OF_MEMORY;
@@ -349,79 +307,61 @@ int u80211_drv_device_ready(void *driver_device, const u80211_drv_device_metadat
 	test_device->u80211_device = device;
 	__atomic_store_n(network_device, test_device, __ATOMIC_RELEASE);
 
-	status = u80211_scan(device);
-	if (status != U80211_STATUS_SUCCESS)
-		goto unregister;
-	status = u80211_wait_for_scan_completion(device);
-	if (status != U80211_STATUS_SUCCESS)
-		goto unregister;
-	status = __atomic_load_n(&scan_tx_status, __ATOMIC_ACQUIRE);
-	if (status != U80211_STATUS_SUCCESS) {
-		fprintf(stderr, "scan probe transmission failed: %d\n", status);
-		goto unregister;
-	}
-	status = print_scan_results(device);
-	if (status != U80211_STATUS_SUCCESS)
-		goto unregister;
-
-	u80211_ap_t *ap = find_ap_by_ssid(device, "astral ftw");
-	if (ap == NULL) {
-		fputs("could not find the astral ftw network\n", stderr);
-		status = U80211_STATUS_UNKNOWN_ERROR;
-		goto unregister;
-	}
-	u80211_mac_address_t bssid = ap->mac_address;
-
-	status = u80211_associate(device, ap, NULL, 0);
-	u80211_ap_release(ap);
-	if (status != U80211_STATUS_SUCCESS) {
-		fprintf(stderr, "could not start association with astral ftw: status %d\n", status);
-		goto unregister;
-	}
-	association_started = true;
-
-	status = u80211_wait_for_association_completion(device);
-	if (status != U80211_STATUS_SUCCESS) {
-		fprintf(stderr, "association with astral ftw failed: status %d\n", status);
-		goto unregister;
-	}
-	if (u80211_get_device_state(device) != U80211_DEVICE_STATE_ASSOCIATED || device->ap == NULL ||
-		strcmp(device->ap->ssid, "astral ftw") != 0 || !u80211_mac_address_equal(&device->ap->mac_address, &bssid)) {
-		fputs("association completed without selecting the astral ftw BSSID\n", stderr);
-		status = U80211_STATUS_UNKNOWN_ERROR;
-		goto unregister;
-	}
-
 	int tap = open_tap();
-	bool tap_ready = false;
 	if (tap < 0) {
 		fputs("could not open tap0 for packet I/O\n", stderr);
-	} else if (!(tap_ready = configure_tap(device))) {
-		fputs("could not configure tap0\n", stderr);
+		status = U80211_STATUS_UNKNOWN_ERROR;
+		goto unregister;
 	}
-	if (tap >= 0 && tap_ready) {
-		test_device->tap_fd = tap;
-		if (pthread_create(&test_device->tap_thread, NULL, tap_io_loop, test_device) != 0) {
-			fputs("could not start tap packet I/O thread\n", stderr);
-		} else if (!in_private_network_namespace()) {
-			fputs("skipping DHCP in the host network namespace; use run_with_ns.sh\n", stderr);
-		} else if (start_dhcp() != 0) {
-			fputs("could not launch isolated IPv4 DHCP on tap0\n", stderr);
-		}
+	if (!configure_tap(device)) {
+		fputs("could not configure tap0\n", stderr);
+		close(tap);
+		status = U80211_STATUS_UNKNOWN_ERROR;
+		goto unregister;
+	}
+	test_device->tap_fd = tap;
+	if (pthread_create(&test_device->tap_thread, NULL, tap_io_loop, test_device) != 0) {
+		fputs("could not start tap packet I/O thread\n", stderr);
+		status = U80211_STATUS_UNKNOWN_ERROR;
+		goto unregister;
+	}
+	test_device->tap_thread_started = true;
+
+	if (u80211_wpas_server_start(device, association_ready, test_device, &test_device->wpas_server) != 0) {
+		fprintf(stderr, "could not start wpa_supplicant control socket %s: %s\n", U80211_WPAS_SOCKET_PATH, strerror(errno));
+		status = U80211_STATUS_UNKNOWN_ERROR;
+		goto unregister;
 	}
 
-	printf(
-		"associated with astral ftw (%02x:%02x:%02x:%02x:%02x:%02x); starting namespace shell\n",
-		bssid.bytes[0], bssid.bytes[1], bssid.bytes[2],
-		bssid.bytes[3], bssid.bytes[4], bssid.bytes[5]
-	);
+	puts("u80211 hardware is ready; starting namespace shell");
+	puts("run: ./wpa_install/sbin/wpa_supplicant -Du80211 -itap0 -c tests/wpa_supplicant.conf");
 	fflush(stdout);
-	if (run_interactive_shell() < 0)
+	if (run_interactive_shell() < 0) {
 		fputs("could not start the network namespace shell\n", stderr);
+		status = U80211_STATUS_UNKNOWN_ERROR;
+	}
 
 unregister:
-	if (association_started)
+	u80211_wpas_server_stop(test_device->wpas_server);
+	test_device->wpas_server = NULL;
+	int device_state = u80211_get_device_state(device);
+	if (device_state == U80211_DEVICE_STATE_SCANNING)
+		u80211_wait_for_scan_completion(device);
+	else if (device_state == U80211_DEVICE_STATE_AUTHENTICATING || device_state == U80211_DEVICE_STATE_ASSOCIATING)
+		u80211_wait_for_association_completion(device);
+	if (u80211_get_device_state(device) == U80211_DEVICE_STATE_ASSOCIATED) {
+		u80211_disassociate(device);
 		wait_for_association_work();
+	}
+	if (test_device->tap_thread_started) {
+		pthread_cancel(test_device->tap_thread);
+		pthread_join(test_device->tap_thread, NULL);
+		test_device->tap_thread_started = false;
+	}
+	if (test_device->tap_fd >= 0) {
+		close(test_device->tap_fd);
+		test_device->tap_fd = -1;
+	}
 	pthread_mutex_lock(&test_device->receive_mutex);
 	test_device->u80211_device = NULL;
 	pthread_mutex_unlock(&test_device->receive_mutex);
@@ -535,7 +475,7 @@ int main(void) {
 	else if (ready_callback_status != U80211_DRV_STATUS_SUCCESS)
 		fprintf(stderr, "device-ready callback failed: %d\n", ready_callback_status);
 	else {
-		puts("u80211_drv: hardware scan scaffold completed");
+		puts("u80211_drv: wpa_supplicant hardware session completed");
 		result = 0;
 	}
 

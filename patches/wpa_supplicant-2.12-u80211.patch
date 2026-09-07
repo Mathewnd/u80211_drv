@@ -1,0 +1,693 @@
+--- a/src/drivers/drivers.c
++++ b/src/drivers/drivers.c
+@@ -9,10 +9,14 @@
+ #include "utils/includes.h"
+ #include "utils/common.h"
+ #include "driver.h"
++extern const struct wpa_driver_ops wpa_driver_u80211_ops;
+ 
+ 
+ const struct wpa_driver_ops *const wpa_drivers[] =
+ {
++#ifdef CONFIG_DRIVER_U80211
++	&wpa_driver_u80211_ops,
++#endif /* CONFIG_DRIVER_U80211 */
+ #ifdef CONFIG_DRIVER_NL80211
+ 	&wpa_driver_nl80211_ops,
+ #endif /* CONFIG_DRIVER_NL80211 */
+--- a/src/drivers/drivers.mak
++++ b/src/drivers/drivers.mak
+@@ -12,6 +12,12 @@
+ 
+ ##### COMMON DRIVERS
+ 
++ifdef CONFIG_DRIVER_U80211
++DRV_CFLAGS += -DCONFIG_DRIVER_U80211
++DRV_OBJS += ../src/drivers/driver_u80211.o
++endif
++
++
+ ifdef CONFIG_DRIVER_WIRED
+ DRV_CFLAGS += -DCONFIG_DRIVER_WIRED
+ DRV_OBJS += ../src/drivers/driver_wired.o
+--- /dev/null
++++ b/src/drivers/driver_u80211.c
+@@ -0,0 +1,658 @@
++/*
++ * u80211 driver interface.  The actual 802.11 implementation lives in the
++ * u80211 test process; this wrapper transports control requests over the
++ * repository's fixed UNIX socket and leaves Ethernet/EAPOL on l2_packet.
++ */
++
++#include "includes.h"
++
++#include "common.h"
++#include "eloop.h"
++#include "driver.h"
++
++#include <sys/socket.h>
++#include <sys/un.h>
++
++/* Private protocol shared only with the u80211 hardware test harness. */
++#define U80211_WPAS_SOCKET_PATH "/tmp/.u80211_sock"
++#define U80211_WPAS_PROTOCOL_MAGIC 0x55383032U
++#define U80211_WPAS_PROTOCOL_VERSION 1U
++#define U80211_WPAS_MAX_PAYLOAD 65535U
++
++enum u80211_wpas_message_type {
++	U80211_WPAS_REQUEST_HELLO = 1,
++	U80211_WPAS_REQUEST_SCAN = 2,
++	U80211_WPAS_REQUEST_GET_SCAN_RESULTS = 3,
++	U80211_WPAS_REQUEST_ASSOCIATE = 4,
++	U80211_WPAS_REQUEST_DISASSOCIATE = 5,
++	U80211_WPAS_REQUEST_GET_LINK = 6,
++	U80211_WPAS_RESPONSE = 0x100,
++	U80211_WPAS_EVENT_SCAN_RESULTS = 0x200,
++	U80211_WPAS_EVENT_ASSOCIATED = 0x201,
++	U80211_WPAS_EVENT_ASSOCIATION_FAILED = 0x202,
++	U80211_WPAS_EVENT_DISASSOCIATED = 0x203,
++};
++
++typedef struct __attribute__((packed)) {
++	u32 magic;
++	u16 version;
++	u16 type;
++	u32 request_id;
++	u32 payload_length;
++	s32 status;
++} u80211_wpas_header_t;
++
++typedef struct __attribute__((packed)) {
++	u8 mac_address[6];
++	u16 reserved;
++} u80211_wpas_hello_t;
++
++typedef struct __attribute__((packed)) {
++	u8 bssid[6];
++	u16 information_elements_length;
++} u80211_wpas_associate_t;
++
++typedef struct __attribute__((packed)) {
++	u32 count;
++} u80211_wpas_scan_results_t;
++
++typedef struct __attribute__((packed)) {
++	u8 bssid[6];
++	u8 channel;
++	u8 ssid_length;
++	u16 beacon_interval;
++	u16 capabilities;
++	u16 rsn_length;
++	u8 rate_bitmap[16];
++} u80211_wpas_scan_record_t;
++
++typedef struct __attribute__((packed)) {
++	u8 state;
++	u8 bssid[6];
++	u8 ssid_length;
++	u8 ssid[32];
++} u80211_wpas_link_t;
++
++#define U80211_WPAS_MAX_PACKET (sizeof(u80211_wpas_header_t) + U80211_WPAS_MAX_PAYLOAD)
++
++struct u80211_driver_data {
++	void *ctx;
++	int sock;
++	u32 next_request_id;
++	u8 own_addr[ETH_ALEN];
++	u8 bssid[ETH_ALEN];
++	u8 ssid[32];
++	size_t ssid_len;
++	struct wpa_scan_results *scan_results;
++};
++
++static u16 u80211_get_le16(const void *ptr)
++{
++	return WPA_GET_LE16(ptr);
++}
++
++static u32 u80211_get_le32(const void *ptr)
++{
++	return WPA_GET_LE32(ptr);
++}
++
++static void u80211_put_le16(void *ptr, u16 value)
++{
++	WPA_PUT_LE16(ptr, value);
++}
++
++static void u80211_put_le32(void *ptr, u32 value)
++{
++	WPA_PUT_LE32(ptr, value);
++}
++
++static int u80211_socket_connect(void)
++{
++	struct sockaddr_un address;
++	int sock;
++
++	sock = socket(AF_UNIX, SOCK_SEQPACKET, 0);
++	if (sock < 0)
++		return -1;
++
++	os_memset(&address, 0, sizeof(address));
++	address.sun_family = AF_UNIX;
++	if (os_snprintf(address.sun_path, sizeof(address.sun_path), "%s",
++			U80211_WPAS_SOCKET_PATH) < 0 ||
++		(size_t) os_strlen(address.sun_path) >= sizeof(address.sun_path)) {
++		close(sock);
++		return -1;
++	}
++
++	if (connect(sock, (struct sockaddr *) &address, sizeof(address)) < 0) {
++		close(sock);
++		return -1;
++	}
++
++	return sock;
++}
++
++static int u80211_validate_message(const u8 *packet, ssize_t packet_len,
++					   u16 expected_type, u32 expected_id,
++					   const u8 **payload, size_t *payload_len,
++					   int *status)
++{
++	const u80211_wpas_header_t *header;
++	u32 length;
++
++	if (packet_len < (ssize_t) sizeof(*header))
++		return -1;
++	header = (const u80211_wpas_header_t *) packet;
++	if (u80211_get_le32(&header->magic) != U80211_WPAS_PROTOCOL_MAGIC ||
++		u80211_get_le16(&header->version) != U80211_WPAS_PROTOCOL_VERSION ||
++		u80211_get_le16(&header->type) != expected_type ||
++		u80211_get_le32(&header->request_id) != expected_id)
++		return -1;
++	length = u80211_get_le32(&header->payload_length);
++	if (length > U80211_WPAS_MAX_PAYLOAD ||
++		(size_t) packet_len != sizeof(*header) + length)
++		return -1;
++
++	*payload = packet + sizeof(*header);
++	*payload_len = length;
++	*status = (int) (s32) u80211_get_le32(&header->status);
++	return 0;
++}
++
++static void u80211_free_scan_results(struct u80211_driver_data *drv)
++{
++	if (drv->scan_results != NULL) {
++		wpa_scan_results_free(drv->scan_results);
++		drv->scan_results = NULL;
++	}
++}
++
++static int u80211_channel_to_freq(u8 channel)
++{
++	if (channel >= 1 && channel <= 13)
++		return 2407 + channel * 5;
++	if (channel == 14)
++		return 2484;
++	return 0;
++}
++
++static size_t u80211_rate_count(const u8 bitmap[16])
++{
++	size_t count = 0;
++
++	for (size_t i = 0; i <= 125; i++)
++		if (bitmap[i / 8] & BIT(i % 8))
++			count++;
++	return count;
++}
++
++static size_t u80211_build_ies(u8 *ies, const u80211_wpas_scan_record_t *record,
++				       const u8 *ssid, const u8 *rsn)
++{
++	size_t offset = 0, rate_count = u80211_rate_count(record->rate_bitmap);
++	size_t first_rates = rate_count > 8 ? 8 : rate_count;
++	size_t rate_index = 0;
++
++	ies[offset++] = WLAN_EID_SSID;
++	ies[offset++] = record->ssid_length;
++	os_memcpy(ies + offset, ssid, record->ssid_length);
++	offset += record->ssid_length;
++	if (rate_count != 0) {
++		u8 *rate_ie = ies + offset;
++		rate_ie[0] = WLAN_EID_SUPP_RATES;
++		rate_ie[1] = first_rates;
++		offset += 2;
++		for (size_t i = 0; i <= 125 && rate_index < first_rates; i++) {
++			if (record->rate_bitmap[i / 8] & BIT(i % 8)) {
++				ies[offset++] = i;
++				rate_index++;
++			}
++		}
++		if (rate_count > first_rates) {
++			u8 *extended_ie = ies + offset;
++			extended_ie[0] = WLAN_EID_EXT_SUPP_RATES;
++			extended_ie[1] = rate_count - first_rates;
++			offset += 2;
++			rate_index = 0;
++			for (size_t i = 0; i <= 125; i++) {
++				if (record->rate_bitmap[i / 8] & BIT(i % 8)) {
++					if (rate_index >= rate_count)
++						break;
++					if (rate_index >= first_rates)
++						ies[offset++] = i;
++					rate_index++;
++				}
++			}
++		}
++	}
++	ies[offset++] = WLAN_EID_DS_PARAMS;
++	ies[offset++] = 1;
++	ies[offset++] = record->channel;
++	if (u80211_get_le16(&record->rsn_length) != 0) {
++		u16 rsn_length = u80211_get_le16(&record->rsn_length);
++		ies[offset++] = WLAN_EID_RSN;
++		ies[offset++] = rsn_length;
++		os_memcpy(ies + offset, rsn, rsn_length);
++		offset += rsn_length;
++	}
++	return offset;
++}
++
++static int u80211_parse_scan_results(struct u80211_driver_data *drv,
++					 const u8 *payload, size_t payload_len)
++{
++	const u80211_wpas_scan_results_t *results;
++	struct wpa_scan_results *scan;
++	size_t offset, count;
++
++	if (payload_len < sizeof(*results))
++		return -1;
++	results = (const u80211_wpas_scan_results_t *) payload;
++	count = u80211_get_le32(&results->count);
++	if (count > 1024)
++		return -1;
++	scan = os_zalloc(sizeof(*scan));
++	if (scan == NULL)
++		return -1;
++	scan->res = os_calloc(count, sizeof(*scan->res));
++	if (count != 0 && scan->res == NULL) {
++		os_free(scan);
++		return -1;
++	}
++	scan->num = count;
++	offset = sizeof(*results);
++	for (size_t i = 0; i < count; i++) {
++		const u80211_wpas_scan_record_t *record;
++		u16 rsn_length;
++		size_t record_size, ie_size;
++		struct wpa_scan_res *entry;
++		u8 *ies;
++
++		if (payload_len - offset < sizeof(*record))
++			goto fail;
++		record = (const u80211_wpas_scan_record_t *) (payload + offset);
++		rsn_length = u80211_get_le16(&record->rsn_length);
++		if (record->ssid_length > 32 || rsn_length > 255)
++			goto fail;
++		record_size = sizeof(*record) + record->ssid_length + rsn_length;
++		if (record_size > payload_len - offset)
++			goto fail;
++		ie_size = 2 + record->ssid_length +
++			(u80211_rate_count(record->rate_bitmap) != 0 ?
++			 2 + u80211_rate_count(record->rate_bitmap) +
++			 (u80211_rate_count(record->rate_bitmap) > 8 ? 2 : 0) : 0) + 3 +
++			 (rsn_length ? 2 + rsn_length : 0);
++		entry = os_zalloc(sizeof(*entry) + ie_size);
++		if (entry == NULL)
++			goto fail;
++		entry->flags = WPA_SCAN_QUAL_INVALID | WPA_SCAN_NOISE_INVALID |
++			WPA_SCAN_LEVEL_INVALID;
++		os_memcpy(entry->bssid, record->bssid, ETH_ALEN);
++		entry->freq = u80211_channel_to_freq(record->channel);
++		entry->beacon_int = u80211_get_le16(&record->beacon_interval);
++		entry->caps = u80211_get_le16(&record->capabilities);
++		entry->ie_len = ie_size;
++		ies = (u8 *) (entry + 1);
++		u80211_build_ies(ies, record, payload + offset + sizeof(*record),
++				 payload + offset + sizeof(*record) + record->ssid_length);
++		scan->res[i] = entry;
++		offset += record_size;
++	}
++	u80211_free_scan_results(drv);
++	drv->scan_results = scan;
++	return 0;
++
++fail:
++	for (size_t i = 0; i < count; i++)
++		os_free(scan->res[i]);
++	os_free(scan->res);
++	os_free(scan);
++	return -1;
++}
++
++static void u80211_dispatch_event(struct u80211_driver_data *drv, u16 type,
++					 const u8 *payload, size_t payload_len)
++{
++	union wpa_event_data event;
++
++	switch (type) {
++	case U80211_WPAS_EVENT_SCAN_RESULTS:
++		if (payload_len != 0 && u80211_parse_scan_results(drv, payload,
++							 payload_len) < 0)
++			return;
++		os_memset(&event, 0, sizeof(event));
++		wpa_supplicant_event(drv->ctx, EVENT_SCAN_RESULTS, &event);
++		break;
++	case U80211_WPAS_EVENT_ASSOCIATED: {
++		const u80211_wpas_link_t *link = (const void *) payload;
++		if (payload_len != sizeof(*link) || link->ssid_length > sizeof(drv->ssid))
++			return;
++		os_memcpy(drv->bssid, link->bssid, ETH_ALEN);
++		drv->ssid_len = link->ssid_length;
++		os_memcpy(drv->ssid, link->ssid, drv->ssid_len);
++		drv_event_assoc(drv->ctx, drv->bssid, NULL, 0, NULL, 0, NULL, -1, 0);
++		break;
++	}
++	case U80211_WPAS_EVENT_ASSOCIATION_FAILED:
++		os_memset(&event, 0, sizeof(event));
++		event.assoc_reject.bssid = drv->bssid;
++		event.assoc_reject.timed_out = 1;
++		event.assoc_reject.status_code = WLAN_STATUS_UNSPECIFIED_FAILURE;
++		wpa_supplicant_event(drv->ctx, EVENT_ASSOC_REJECT, &event);
++		break;
++	case U80211_WPAS_EVENT_DISASSOCIATED:
++		drv_event_disassoc(drv->ctx, drv->bssid);
++		os_memset(drv->bssid, 0, sizeof(drv->bssid));
++		drv->ssid_len = 0;
++		break;
++	default:
++		break;
++	}
++}
++
++static int u80211_recv_packet(struct u80211_driver_data *drv, u8 **packet_out,
++				      ssize_t *packet_len_out)
++{
++	u8 *packet = os_malloc(U80211_WPAS_MAX_PACKET);
++	ssize_t packet_len;
++
++	if (packet == NULL)
++		return -1;
++	packet_len = recv(drv->sock, packet, U80211_WPAS_MAX_PACKET, 0);
++	if (packet_len <= 0) {
++		os_free(packet);
++		return -1;
++	}
++	*packet_out = packet;
++	*packet_len_out = packet_len;
++	return 0;
++}
++
++static int u80211_request(struct u80211_driver_data *drv, u16 type,
++				  const void *payload, size_t payload_len,
++				  u8 **response_payload, size_t *response_len)
++{
++	u8 *packet, *response;
++	u80211_wpas_header_t *header;
++	u32 request_id = ++drv->next_request_id;
++	ssize_t packet_len;
++	const u8 *body;
++	int status;
++
++	if (payload_len > U80211_WPAS_MAX_PAYLOAD)
++		return -1;
++	packet = os_zalloc(sizeof(*header) + payload_len);
++	if (packet == NULL)
++		return -1;
++	header = (u80211_wpas_header_t *) packet;
++	u80211_put_le32(&header->magic, U80211_WPAS_PROTOCOL_MAGIC);
++	u80211_put_le16(&header->version, U80211_WPAS_PROTOCOL_VERSION);
++	u80211_put_le16(&header->type, type);
++	u80211_put_le32(&header->request_id, request_id);
++	u80211_put_le32(&header->payload_length, payload_len);
++	u80211_put_le32(&header->status, 0);
++	if (payload_len != 0)
++		os_memcpy(packet + sizeof(*header), payload, payload_len);
++	if (send(drv->sock, packet, sizeof(*header) + payload_len, 0) !=
++		(ssize_t) (sizeof(*header) + payload_len)) {
++		os_free(packet);
++		return -1;
++	}
++	os_free(packet);
++
++	for (;;) {
++		if (u80211_recv_packet(drv, &response, &packet_len) < 0)
++			return -1;
++		if (packet_len >= (ssize_t) sizeof(*header) &&
++			u80211_get_le32(response) == U80211_WPAS_PROTOCOL_MAGIC &&
++			u80211_get_le16(response + 4) == U80211_WPAS_PROTOCOL_VERSION &&
++			u80211_get_le16(response + 6) >= U80211_WPAS_EVENT_SCAN_RESULTS) {
++			const u80211_wpas_header_t *event_header = (void *) response;
++			size_t event_len = u80211_get_le32(&event_header->payload_length);
++			if (event_len <= U80211_WPAS_MAX_PAYLOAD &&
++				(size_t) packet_len == sizeof(*event_header) + event_len)
++				u80211_dispatch_event(drv,
++					u80211_get_le16(&event_header->type),
++					response + sizeof(*event_header), event_len);
++			os_free(response);
++			continue;
++		}
++		if (u80211_validate_message(response, packet_len, U80211_WPAS_RESPONSE,
++					request_id, &body, response_len, &status) < 0) {
++			os_free(response);
++			return -1;
++		}
++		if (status != 0) {
++			os_free(response);
++			return -1;
++		}
++		if (*response_len == 0) {
++			os_free(response);
++			*response_payload = NULL;
++			return 0;
++		}
++		*response_payload = os_malloc(*response_len);
++		if (*response_payload == NULL) {
++			os_free(response);
++			return -1;
++		}
++		os_memcpy(*response_payload, body, *response_len);
++		os_free(response);
++		return 0;
++	}
++}
++
++static void u80211_read_event(int sock, void *eloop_ctx, void *sock_ctx)
++{
++	struct u80211_driver_data *drv = eloop_ctx;
++	u8 *packet;
++	ssize_t packet_len;
++	const u80211_wpas_header_t *header;
++	size_t payload_len;
++
++	(void) sock;
++	(void) sock_ctx;
++	if (u80211_recv_packet(drv, &packet, &packet_len) < 0) {
++		eloop_unregister_read_sock(drv->sock);
++		wpa_printf(MSG_ERROR, "u80211: control socket disconnected");
++		return;
++	}
++	if (packet_len < (ssize_t) sizeof(*header))
++		goto out;
++	header = (const void *) packet;
++	payload_len = u80211_get_le32(&header->payload_length);
++	if (u80211_get_le32(&header->magic) != U80211_WPAS_PROTOCOL_MAGIC ||
++		u80211_get_le16(&header->version) != U80211_WPAS_PROTOCOL_VERSION ||
++		u80211_get_le16(&header->type) < U80211_WPAS_EVENT_SCAN_RESULTS ||
++		payload_len > U80211_WPAS_MAX_PAYLOAD ||
++		(size_t) packet_len != sizeof(*header) + payload_len)
++		goto out;
++	u80211_dispatch_event(drv, u80211_get_le16(&header->type),
++				      packet + sizeof(*header), payload_len);
++out:
++	os_free(packet);
++}
++
++static void *u80211_init(void *ctx, const char *ifname)
++{
++	struct u80211_driver_data *drv;
++	u8 *payload = NULL;
++	size_t payload_len = 0;
++
++	(void) ifname;
++	drv = os_zalloc(sizeof(*drv));
++	if (drv == NULL)
++		return NULL;
++	drv->ctx = ctx;
++	drv->sock = u80211_socket_connect();
++	if (drv->sock < 0)
++		goto fail;
++	if (u80211_request(drv, U80211_WPAS_REQUEST_HELLO, NULL, 0,
++			   &payload, &payload_len) < 0 || payload_len < ETH_ALEN)
++		goto fail;
++	os_memcpy(drv->own_addr, payload, ETH_ALEN);
++	os_free(payload);
++	if (eloop_register_read_sock(drv->sock, u80211_read_event, drv, NULL) < 0)
++		goto fail;
++	return drv;
++
++fail:
++	os_free(payload);
++	if (drv->sock >= 0)
++		close(drv->sock);
++	os_free(drv);
++	return NULL;
++}
++
++static void u80211_deinit(void *priv)
++{
++	struct u80211_driver_data *drv = priv;
++	if (drv == NULL)
++		return;
++	eloop_unregister_read_sock(drv->sock);
++	close(drv->sock);
++	u80211_free_scan_results(drv);
++	os_free(drv);
++}
++
++static int u80211_get_capa(void *priv, struct wpa_driver_capa *capa)
++{
++	(void) priv;
++	os_memset(capa, 0, sizeof(*capa));
++	capa->auth = WPA_DRIVER_AUTH_OPEN;
++	return 0;
++}
++
++static const u8 *u80211_get_mac_addr(void *priv)
++{
++	return ((struct u80211_driver_data *) priv)->own_addr;
++}
++
++static int u80211_get_bssid(void *priv, u8 *bssid)
++{
++	os_memcpy(bssid, ((struct u80211_driver_data *) priv)->bssid, ETH_ALEN);
++	return 0;
++}
++
++static int u80211_get_ssid(void *priv, u8 *ssid)
++{
++	struct u80211_driver_data *drv = priv;
++	os_memcpy(ssid, drv->ssid, drv->ssid_len);
++	return drv->ssid_len;
++}
++
++static int u80211_set_key(void *priv, struct wpa_driver_set_key_params *params)
++{
++	(void) priv;
++	/* Open networks never install keys; accept cleanup and reject all others. */
++	return params != NULL && params->alg == WPA_ALG_NONE ? 0 : -1;
++}
++
++static int u80211_scan2(void *priv, struct wpa_driver_scan_params *params)
++{
++	struct u80211_driver_data *drv = priv;
++	u8 *response = NULL;
++	size_t response_len = 0;
++
++	(void) params;
++	u80211_free_scan_results(drv);
++	if (u80211_request(drv, U80211_WPAS_REQUEST_SCAN, NULL, 0,
++			   &response, &response_len) < 0)
++		return -1;
++	if (response_len != 0) {
++		if (u80211_parse_scan_results(drv, response, response_len) < 0) {
++			os_free(response);
++			return -1;
++		}
++		os_free(response);
++		wpa_supplicant_event(drv->ctx, EVENT_SCAN_RESULTS, NULL);
++	}
++	return 0;
++}
++
++static struct wpa_scan_results *u80211_get_scan_results2(void *priv)
++{
++	struct u80211_driver_data *drv = priv;
++	u8 *response = NULL;
++	size_t response_len = 0;
++	struct wpa_scan_results *results;
++
++	if (drv->scan_results == NULL) {
++		if (u80211_request(drv, U80211_WPAS_REQUEST_GET_SCAN_RESULTS, NULL,
++				   0, &response, &response_len) < 0)
++			return NULL;
++		if (u80211_parse_scan_results(drv, response, response_len) < 0) {
++			os_free(response);
++			return NULL;
++		}
++		os_free(response);
++	}
++	results = drv->scan_results;
++	drv->scan_results = NULL;
++	return results;
++}
++
++static int u80211_associate(void *priv, struct wpa_driver_associate_params *params)
++{
++	struct u80211_driver_data *drv = priv;
++	u8 *request;
++	u8 *response = NULL;
++	size_t response_len = 0;
++
++	if (params == NULL || params->bssid == NULL ||
++		(params->wpa_ie_len != 0 && params->wpa_ie == NULL) ||
++		(params->ssid_len != 0 && params->ssid == NULL) ||
++		params->wpa_ie_len > UINT16_MAX || params->ssid_len > sizeof(drv->ssid))
++		return -1;
++	os_memcpy(drv->bssid, params->bssid, ETH_ALEN);
++	drv->ssid_len = params->ssid_len;
++	if (drv->ssid_len != 0)
++		os_memcpy(drv->ssid, params->ssid, drv->ssid_len);
++	request = os_zalloc(sizeof(u80211_wpas_associate_t) + params->wpa_ie_len);
++	if (request == NULL)
++		return -1;
++	os_memcpy(request, params->bssid, ETH_ALEN);
++	u80211_put_le16(request + 6, params->wpa_ie_len);
++	if (params->wpa_ie_len != 0)
++		os_memcpy(request + sizeof(u80211_wpas_associate_t), params->wpa_ie,
++			  params->wpa_ie_len);
++	int status = u80211_request(drv, U80211_WPAS_REQUEST_ASSOCIATE, request,
++				    sizeof(u80211_wpas_associate_t) + params->wpa_ie_len,
++				    &response, &response_len);
++	os_free(request);
++	if (status < 0)
++		return -1;
++	os_free(response);
++	return 0;
++}
++
++static int u80211_deauthenticate(void *priv, const u8 *addr, u16 reason_code)
++{
++	struct u80211_driver_data *drv = priv;
++	u8 *response = NULL;
++	size_t response_len = 0;
++
++	(void) addr;
++	(void) reason_code;
++	if (u80211_request(drv, U80211_WPAS_REQUEST_DISASSOCIATE, NULL, 0,
++			   &response, &response_len) < 0)
++		return -1;
++	os_free(response);
++	return 0;
++}
++
++const struct wpa_driver_ops wpa_driver_u80211_ops = {
++	.name = "u80211",
++	.desc = "u80211 userspace driver over UNIX socket",
++	.init = u80211_init,
++	.deinit = u80211_deinit,
++	.get_capa = u80211_get_capa,
++	.get_mac_addr = u80211_get_mac_addr,
++	.get_bssid = u80211_get_bssid,
++	.get_ssid = u80211_get_ssid,
++	.set_key = u80211_set_key,
++	.scan2 = u80211_scan2,
++	.get_scan_results2 = u80211_get_scan_results2,
++	.associate = u80211_associate,
++	.deauthenticate = u80211_deauthenticate,
++};

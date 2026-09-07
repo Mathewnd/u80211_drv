@@ -5,6 +5,7 @@ test_hardware = executable(
   'test_hardware',
   'test_hardware.c',
   'kernel_interface.c',
+  'wpas_server.c',
   dependencies: [u80211_drv_dep, libusb_dep, threads_dep],
 )
 

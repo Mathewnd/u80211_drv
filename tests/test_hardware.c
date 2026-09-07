@@ -47,6 +47,11 @@ typedef struct {
 	u80211_wpas_server_t *wpas_server;
 } test_device_t;
 
+static bool trace_packets(void) {
+	const char *value = getenv("U80211_TRACE_PACKETS");
+	return value != NULL && value[0] != '\0' && strcmp(value, "0") != 0;
+}
+
 static void *tap_io_loop(void *context) {
 	test_device_t *test_device = context;
 	uint8_t frame[1514];
@@ -72,7 +77,11 @@ static void *tap_io_loop(void *context) {
 		}
 		descriptor.current_offset = descriptor.size - (size_t)size;
 		memcpy((uint8_t *)descriptor.data + descriptor.current_offset, frame, (size_t)size);
-		u80211_transmit_buffer(device, &descriptor);
+		int status = u80211_transmit_buffer(device, &descriptor);
+		if (trace_packets()) {
+			uint16_t ethertype = size >= 14 ? ((uint16_t)frame[12] << 8) | frame[13] : 0;
+			fprintf(stderr, "u80211 trace: TAP TX size=%zd ethertype=0x%04x status=%d\n", size, ethertype, status);
+		}
 	}
 	return NULL;
 }
@@ -128,9 +137,9 @@ static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t
 }
 
 static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor, const u80211_transmit_options_t *options) {
-	(void)options;
 	test_device_t *test_device = device->driver_data;
-	int status = test_device->ops->transmit(test_device->device, descriptor->data, descriptor->size, descriptor->current_offset);
+	int key_index = options == NULL ? -1 : options->key;
+	int status = test_device->ops->transmit(test_device->device, descriptor->data, descriptor->size, descriptor->current_offset, key_index);
 
 	descriptor->data = NULL;
 	descriptor->size = 0;
@@ -150,26 +159,11 @@ static int set_key(u80211_device_t *device, const u80211_key_t *key) {
 	if (key == NULL)
 		return U80211_STATUS_NOT_PERMITTED;
 
-	int cipher;
-	switch (key->cipher) {
-		case U80211_CIPHER_CCMP:
-			cipher = U80211_DRV_CIPHER_CCMP;
-			break;
-		case U80211_CIPHER_TKIP:
-			cipher = U80211_DRV_CIPHER_TKIP;
-			break;
-		case U80211_CIPHER_WEP40:
-			cipher = U80211_DRV_CIPHER_WEP40;
-			break;
-		case U80211_CIPHER_WEP104:
-			cipher = U80211_DRV_CIPHER_WEP104;
-			break;
-		default:
-			return U80211_STATUS_UNSUPPORTED;
-	}
+	if (key->cipher != U80211_CIPHER_CCMP)
+		return U80211_STATUS_UNSUPPORTED;
 
 	u80211_drv_key_t driver_key = {
-		.cipher = cipher,
+		.cipher = U80211_DRV_CIPHER_CCMP,
 		.index = key->index,
 		.key = key->key,
 		.key_len = key->key_len,
@@ -312,8 +306,13 @@ void u80211_drv_packet_received(u80211_drv_network_device_handle_t network_devic
 	test_device_t *test_device = network_device;
 	pthread_mutex_lock(&test_device->receive_mutex);
 	u80211_device_t *device = test_device->u80211_device;
-	if (device != NULL)
+	if (device != NULL) {
+		if (trace_packets()) {
+			uint16_t frame_control = packet_size >= 2 ? (uint16_t)((uint8_t *)packet)[0] | ((uint16_t)((uint8_t *)packet)[1] << 8) : 0;
+			fprintf(stderr, "u80211 trace: radio RX size=%zu frame_control=0x%04x\n", packet_size, frame_control);
+		}
 		u80211_process_packet(device, packet, packet_size);
+	}
 	pthread_mutex_unlock(&test_device->receive_mutex);
 }
 
@@ -321,6 +320,11 @@ void u80211_kernel_receive_callback(u80211_device_t *device, void *buffer, size_
 	test_device_t *test_device = device->driver_data;
 	if (test_device == NULL || test_device->tap_fd < 0)
 		return;
+	if (trace_packets()) {
+		const uint8_t *frame = buffer;
+		uint16_t ethertype = size >= 14 ? ((uint16_t)frame[12] << 8) | frame[13] : 0;
+		fprintf(stderr, "u80211 trace: TAP RX size=%zu ethertype=0x%04x\n", size, ethertype);
+	}
 	ssize_t written = write(test_device->tap_fd, buffer, size);
 	(void)written;
 }

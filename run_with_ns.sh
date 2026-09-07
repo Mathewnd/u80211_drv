@@ -11,6 +11,10 @@ if ! command -v ip >/dev/null 2>&1; then
 	echo "required command 'ip' was not found" >&2
 	exit 1
 fi
+if ! command -v unshare >/dev/null 2>&1 || ! command -v mount >/dev/null 2>&1; then
+	echo "required commands 'unshare' and 'mount' were not found" >&2
+	exit 1
+fi
 
 namespace=u80211-hardware
 if ! ip netns add "$namespace"; then
@@ -36,4 +40,8 @@ if [ "$#" -eq 0 ]; then
 	set -- ./build/tests/test_hardware
 fi
 
-ip netns exec "$namespace" "$@"
+# Network namespaces do not isolate /run. Give the hardware session its own
+# runtime directory so clients such as dhcpcd cannot find and command daemons
+# running in the host namespace.
+ip netns exec "$namespace" unshare --mount --propagation private -- \
+	sh -c 'mount -t tmpfs -o mode=755,nosuid,nodev tmpfs /run && exec "$@"' sh "$@"

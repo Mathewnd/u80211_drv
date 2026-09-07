@@ -27,6 +27,8 @@
 #define RTL8188EU_IQK_RUN_COUNT 3
 #define RTL8188EU_IQK_TOLERANCE 5
 #define RTL8188EU_IQK_DELAY_US 1000
+#define RTL8188EU_LC_MAX_POLLS 100
+#define RTL8188EU_LC_POLL_DELAY_US 100
 
 #define RTL8188EU_REG_GPIO_MUXCFG 0x0040
 #define RTL8188EU_REG_GPIO_MUXCFG_ENBT (1u << 5)
@@ -607,7 +609,21 @@ static int rtl8188eu_lc_calibrate(u80211_drv_device_handle_t device) {
 		result = status;
 		goto restore;
 	}
-	u80211_drv_kernel_stall_us(100);
+
+	unsigned int poll;
+	for (poll = 0; poll < RTL8188EU_LC_MAX_POLLS; ++poll) {
+		status = u80211_drv_rtl8188eu_rf_read(device, U80211_DRV_RTL8188EU_RF_CHNLBW, &chnlbw);
+		if (status != U80211_DRV_STATUS_SUCCESS) {
+			result = status;
+			goto restore;
+		}
+		if ((chnlbw & RTL8188EU_RF_CHNLBW_LCSTART) == 0)
+			break;
+
+		u80211_drv_kernel_stall_us(RTL8188EU_LC_POLL_DELAY_US);
+	}
+	if (poll == RTL8188EU_LC_MAX_POLLS)
+		result = U80211_DRV_STATUS_TIMEOUT;
 
 restore:
 	if (rf_ac_modified) {

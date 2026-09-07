@@ -22,6 +22,13 @@
 
 #define IEEE80211_CAPABILITY_PRIVACY 0x0010
 #define SERVER_POLL_TIMEOUT_MS 100
+#define KEY_SLOT_COUNT 8
+
+typedef struct {
+	bool valid;
+	u80211_mac_address_t peer;
+	uint32_t flags;
+} key_slot_t;
 
 struct u80211_wpas_server {
 	u80211_device_t *device;
@@ -31,13 +38,25 @@ struct u80211_wpas_server {
 	bool stopping;
 	bool scan_pending;
 	bool association_pending;
+	bool operstate_up;
 	int previous_state;
+	key_slot_t keys[KEY_SLOT_COUNT];
 	u80211_wpas_associated_fn_t associated;
 	void *associated_context;
 };
 
 static bool server_stopping(u80211_wpas_server_t *server) {
 	return __atomic_load_n(&server->stopping, __ATOMIC_ACQUIRE);
+}
+
+static void clear_keys(u80211_wpas_server_t *server) {
+	for (size_t i = 0; i < KEY_SLOT_COUNT; ++i) {
+		key_slot_t *slot = &server->keys[i];
+		if (!slot->valid)
+			continue;
+		u80211_del_key(server->device, (uint8_t)(i / 2), &slot->peer, slot->flags);
+		memset(slot, 0, sizeof(*slot));
+	}
 }
 
 static int send_packet(u80211_wpas_server_t *server, uint16_t type, uint32_t request_id, int status, const void *payload, uint32_t payload_length) {
@@ -97,8 +116,10 @@ static void monitor_operations(u80211_wpas_server_t *server) {
 	u80211_wpas_link_t link;
 	int state = link_snapshot(server, &link);
 	if (server->client_fd < 0 && state == U80211_DEVICE_STATE_ASSOCIATED) {
+		clear_keys(server);
 		u80211_disassociate(server->device);
 		server->association_pending = false;
+		server->operstate_up = false;
 		server->previous_state = U80211_DEVICE_STATE_DOWN;
 		return;
 	}
@@ -112,12 +133,12 @@ static void monitor_operations(u80211_wpas_server_t *server) {
 		server->association_pending = false;
 		if (state == U80211_DEVICE_STATE_ASSOCIATED) {
 			send_event(server, U80211_WPAS_EVENT_ASSOCIATED, U80211_STATUS_SUCCESS, &link, sizeof(link));
-			if (server->associated != NULL)
-				server->associated(server->associated_context);
 		} else {
 			send_event(server, U80211_WPAS_EVENT_ASSOCIATION_FAILED, U80211_STATUS_UNKNOWN_ERROR, NULL, 0);
 		}
 	} else if (server->previous_state == U80211_DEVICE_STATE_ASSOCIATED && state != U80211_DEVICE_STATE_ASSOCIATED) {
+		server->operstate_up = false;
+		clear_keys(server);
 		send_event(server, U80211_WPAS_EVENT_DISASSOCIATED, U80211_STATUS_SUCCESS, NULL, 0);
 	}
 
@@ -193,14 +214,130 @@ static int handle_associate(u80211_wpas_server_t *server, uint32_t request_id, c
 		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
 
 	int status;
-	if (ap->rsn_size != 0 || (ap->capabilities & IEEE80211_CAPABILITY_PRIVACY) != 0)
+	if (ap->rsn_size == 0 && (ap->capabilities & IEEE80211_CAPABILITY_PRIVACY) != 0)
 		status = U80211_STATUS_UNSUPPORTED;
 	else
 		status = u80211_associate(server->device, ap, payload + sizeof(*request), ies_length);
 	u80211_ap_release(ap);
-	if (status == U80211_STATUS_SUCCESS)
+	if (status == U80211_STATUS_SUCCESS) {
 		server->association_pending = true;
+		server->operstate_up = false;
+	}
 	return send_response(server, request_id, status, NULL, 0);
+}
+
+static int key_slot_index(uint8_t key_index, uint32_t flags) {
+	return key_index * 2 + ((flags & U80211_WPAS_KEY_GROUP) != 0);
+}
+
+static int validate_key_flags(uint32_t flags, bool deleting) {
+	const uint32_t known_flags = U80211_WPAS_KEY_PAIRWISE | U80211_WPAS_KEY_GROUP |
+		U80211_WPAS_KEY_RX | U80211_WPAS_KEY_TX;
+	bool pairwise = (flags & U80211_WPAS_KEY_PAIRWISE) != 0;
+	bool group = (flags & U80211_WPAS_KEY_GROUP) != 0;
+
+	if ((flags & ~known_flags) != 0 || pairwise == group)
+		return -1;
+	if (deleting)
+		return (flags & (U80211_WPAS_KEY_RX | U80211_WPAS_KEY_TX)) == 0 ? 0 : -1;
+	return (flags & (U80211_WPAS_KEY_RX | U80211_WPAS_KEY_TX)) != 0 ? 0 : -1;
+}
+
+static uint32_t key_flags_to_u80211(uint32_t flags) {
+	uint32_t result = 0;
+	if (flags & U80211_WPAS_KEY_PAIRWISE)
+		result |= U80211_KEY_PAIRWISE;
+	if (flags & U80211_WPAS_KEY_GROUP)
+		result |= U80211_KEY_GROUP;
+	if (flags & U80211_WPAS_KEY_RX)
+		result |= U80211_KEY_RX;
+	if (flags & U80211_WPAS_KEY_TX)
+		result |= U80211_KEY_TX;
+	return result;
+}
+
+static int handle_set_key(u80211_wpas_server_t *server, uint32_t request_id, const uint8_t *payload, uint32_t payload_length) {
+	if (payload_length < sizeof(u80211_wpas_set_key_t))
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+
+	const u80211_wpas_set_key_t *request = (const void *)payload;
+	uint32_t flags = le32toh(request->flags);
+	size_t sequence_length = le16toh(request->sequence_length);
+	size_t key_length = le16toh(request->key_length);
+	if (request->cipher != U80211_WPAS_CIPHER_CCMP)
+		return send_response(server, request_id, U80211_STATUS_UNSUPPORTED, NULL, 0);
+	if (request->key_index > 3 || validate_key_flags(flags, false) != 0 ||
+		(sequence_length != 0 && sequence_length != 6) || key_length != 16 ||
+		payload_length != sizeof(*request) + sequence_length + key_length)
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+	if (((request->peer[0] & 1U) != 0) != ((flags & U80211_WPAS_KEY_GROUP) != 0))
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+	int slot_index = key_slot_index(request->key_index, flags);
+	if (server->keys[slot_index ^ 1].valid)
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+
+	u80211_key_t key = {
+		.cipher = U80211_CIPHER_CCMP,
+		.index = request->key_index,
+		.key = payload + sizeof(*request) + sequence_length,
+		.key_len = key_length,
+		.rx_seq = sequence_length == 0 ? NULL : payload + sizeof(*request),
+		.rx_seq_len = sequence_length,
+		.flags = key_flags_to_u80211(flags),
+	};
+	memcpy(key.peer.bytes, request->peer, sizeof(key.peer.bytes));
+	int status = u80211_set_key(server->device, &key);
+	if (status == U80211_STATUS_SUCCESS) {
+		key_slot_t *slot = &server->keys[slot_index];
+		slot->valid = true;
+		slot->peer = key.peer;
+		slot->flags = key.flags;
+	}
+	return send_response(server, request_id, status, NULL, 0);
+}
+
+static int handle_delete_key(u80211_wpas_server_t *server, uint32_t request_id, const uint8_t *payload, uint32_t payload_length) {
+	if (payload_length != sizeof(u80211_wpas_delete_key_t))
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+
+	const u80211_wpas_delete_key_t *request = (const void *)payload;
+	uint32_t flags = le32toh(request->flags);
+	if (request->key_index > 3 || request->reserved != 0 || validate_key_flags(flags, true) != 0)
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+
+	u80211_mac_address_t peer;
+	memcpy(peer.bytes, request->peer, sizeof(peer.bytes));
+	int slot_index = key_slot_index(request->key_index, flags);
+	key_slot_t *slot = &server->keys[slot_index];
+	uint32_t delete_flags = key_flags_to_u80211(flags);
+	if (slot->valid) {
+		if (!u80211_mac_address_equal(&slot->peer, &peer))
+			return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+		delete_flags = slot->flags;
+	} else if (server->keys[slot_index ^ 1].valid)
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+	int status = u80211_del_key(server->device, request->key_index, &peer, delete_flags);
+	if (status == U80211_STATUS_SUCCESS)
+		memset(slot, 0, sizeof(*slot));
+	return send_response(server, request_id, status, NULL, 0);
+}
+
+static int handle_set_operstate(u80211_wpas_server_t *server, uint32_t request_id, const uint8_t *payload, uint32_t payload_length) {
+	if (payload_length != sizeof(u80211_wpas_operstate_t))
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+
+	const u80211_wpas_operstate_t *request = (const void *)payload;
+	if (request->up > 1 || request->reserved[0] != 0 || request->reserved[1] != 0 || request->reserved[2] != 0)
+		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
+	if (request->up != 0 && u80211_get_device_state(server->device) != U80211_DEVICE_STATE_ASSOCIATED)
+		return send_response(server, request_id, U80211_STATUS_NOT_ASSOCIATED, NULL, 0);
+
+	bool notify = request->up != 0 && !server->operstate_up;
+	server->operstate_up = request->up != 0;
+	int result = send_response(server, request_id, U80211_STATUS_SUCCESS, NULL, 0);
+	if (result == 0 && notify && server->associated != NULL)
+		server->associated(server->associated_context);
+	return result;
 }
 
 static int handle_request(u80211_wpas_server_t *server, const uint8_t *packet, size_t packet_size) {
@@ -244,7 +381,9 @@ static int handle_request(u80211_wpas_server_t *server, const uint8_t *packet, s
 			int result = send_response(server, request_id, status, NULL, 0);
 			if (status == U80211_STATUS_SUCCESS) {
 				server->association_pending = false;
+				server->operstate_up = false;
 				server->previous_state = U80211_DEVICE_STATE_DOWN;
+				clear_keys(server);
 				send_event(server, U80211_WPAS_EVENT_DISASSOCIATED, status, NULL, 0);
 			}
 			return result;
@@ -256,6 +395,12 @@ static int handle_request(u80211_wpas_server_t *server, const uint8_t *packet, s
 			link_snapshot(server, &link);
 			return send_response(server, request_id, U80211_STATUS_SUCCESS, &link, sizeof(link));
 		}
+		case U80211_WPAS_REQUEST_SET_KEY:
+			return handle_set_key(server, request_id, payload, payload_length);
+		case U80211_WPAS_REQUEST_DELETE_KEY:
+			return handle_delete_key(server, request_id, payload, payload_length);
+		case U80211_WPAS_REQUEST_SET_OPERSTATE:
+			return handle_set_operstate(server, request_id, payload, payload_length);
 		default:
 			return send_response(server, request_id, U80211_STATUS_UNSUPPORTED, NULL, 0);
 	}
@@ -268,6 +413,8 @@ static void close_client(u80211_wpas_server_t *server) {
 	}
 	server->scan_pending = false;
 	server->association_pending = false;
+	server->operstate_up = false;
+	clear_keys(server);
 }
 
 static void *server_loop(void *context) {

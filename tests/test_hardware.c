@@ -146,11 +146,62 @@ static int set_channel(u80211_device_t *device, int channel) {
 	return status_to_u80211(test_device->ops->set_channel(test_device->device, (uint8_t)channel));
 }
 
+static int set_key(u80211_device_t *device, const u80211_key_t *key) {
+	if (key == NULL)
+		return U80211_STATUS_NOT_PERMITTED;
+
+	int cipher;
+	switch (key->cipher) {
+		case U80211_CIPHER_CCMP:
+			cipher = U80211_DRV_CIPHER_CCMP;
+			break;
+		case U80211_CIPHER_TKIP:
+			cipher = U80211_DRV_CIPHER_TKIP;
+			break;
+		case U80211_CIPHER_WEP40:
+			cipher = U80211_DRV_CIPHER_WEP40;
+			break;
+		case U80211_CIPHER_WEP104:
+			cipher = U80211_DRV_CIPHER_WEP104;
+			break;
+		default:
+			return U80211_STATUS_UNSUPPORTED;
+	}
+
+	u80211_drv_key_t driver_key = {
+		.cipher = cipher,
+		.index = key->index,
+		.key = key->key,
+		.key_len = key->key_len,
+	};
+	memcpy(driver_key.peer, key->peer.bytes, sizeof(driver_key.peer));
+	if (key->flags & U80211_KEY_PAIRWISE)
+		driver_key.flags |= U80211_DRV_KEY_PAIRWISE;
+	if (key->flags & U80211_KEY_GROUP)
+		driver_key.flags |= U80211_DRV_KEY_GROUP;
+	if (key->flags & U80211_KEY_RX)
+		driver_key.flags |= U80211_DRV_KEY_RX;
+	if (key->flags & U80211_KEY_TX)
+		driver_key.flags |= U80211_DRV_KEY_TX;
+
+	test_device_t *test_device = device->driver_data;
+	return status_to_u80211(test_device->ops->set_key(test_device->device, &driver_key));
+}
+
+static int delete_key(u80211_device_t *device, uint8_t index, const u80211_mac_address_t *peer, uint32_t flags) {
+	(void)peer;
+	(void)flags;
+	test_device_t *test_device = device->driver_data;
+	return status_to_u80211(test_device->ops->del_key(test_device->device, index));
+}
+
 static const u80211_device_ops_t device_ops = {
 	.allocate_tx_buffer = allocate_tx_buffer,
 	.free_tx_buffer = free_tx_buffer,
 	.transmit = transmit,
 	.set_channel = set_channel,
+	.set_key = set_key,
+	.del_key = delete_key,
 };
 
 static void wait_for_association_work(void) {

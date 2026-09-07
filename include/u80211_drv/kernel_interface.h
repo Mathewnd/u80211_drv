@@ -40,11 +40,32 @@ typedef struct {
 	uint8_t rate_bitmap[U80211_DRV_DEVICE_RATE_BITMAP_LEN];
 } u80211_drv_device_metadata_t;
 
+#define U80211_DRV_CIPHER_CCMP 0
+#define U80211_DRV_CIPHER_TKIP 1
+#define U80211_DRV_CIPHER_WEP40 2
+#define U80211_DRV_CIPHER_WEP104 3
+
+#define U80211_DRV_KEY_PAIRWISE (1u << 0)
+#define U80211_DRV_KEY_GROUP (1u << 1)
+#define U80211_DRV_KEY_RX (1u << 2)
+#define U80211_DRV_KEY_TX (1u << 3)
+
+typedef struct {
+	int cipher;
+	uint8_t index;
+	uint8_t peer[U80211_DRV_DEVICE_MAC_ADDRESS_LEN];
+	const uint8_t *key;
+	size_t key_len;
+	uint32_t flags;
+} u80211_drv_key_t;
+
 typedef struct {
 	int (*allocate_tx_buffer)(size_t size, void **buffer);
 	void (*free_tx_buffer)(void *buffer);
 	int (*transmit)(void *device, void *buffer, size_t size, size_t current_offset);
 	int (*set_channel)(void *device, uint8_t channel);
+	int (*set_key)(void *device, const u80211_drv_key_t *key);
+	int (*del_key)(void *device, uint8_t index);
 } u80211_drv_device_ops_t;
 
 #define U80211_DRV_KERNEL_XFER_OUT 0x00

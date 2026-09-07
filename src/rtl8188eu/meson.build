@@ -4,6 +4,7 @@ rtl8188eu_library = static_library(
   'channel.c',
   'efuse.c',
   'firmware.c',
+  'key.c',
   'calibration.c',
   'mac.c',
   'mac_table.c',

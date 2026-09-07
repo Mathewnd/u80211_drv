@@ -194,8 +194,20 @@
 #define U80211_DRV_RTL8188EU_REG_ACKTO 0x0640
 
 #define U80211_DRV_RTL8188EU_REG_CAMCMD 0x0670
+#define U80211_DRV_RTL8188EU_REG_CAMWRITE 0x0674
+#define U80211_DRV_RTL8188EU_REG_CAMCMD_WRITE (1u << 16)
 #define U80211_DRV_RTL8188EU_REG_CAMCMD_CLR (1u << 30)
 #define U80211_DRV_RTL8188EU_REG_CAMCMD_POLLING (1u << 31)
+
+#define U80211_DRV_RTL8188EU_CAM_ENTRY_WORD_COUNT 8
+#define U80211_DRV_RTL8188EU_CAM_CTL0_KEY_ID_MASK 0x03
+#define U80211_DRV_RTL8188EU_CAM_CTL0_ALGORITHM_SHIFT 2
+#define U80211_DRV_RTL8188EU_CAM_CTL0_GROUP (1u << 6)
+#define U80211_DRV_RTL8188EU_CAM_CTL0_VALID (1u << 15)
+#define U80211_DRV_RTL8188EU_CAM_ALGORITHM_WEP40 1
+#define U80211_DRV_RTL8188EU_CAM_ALGORITHM_TKIP 2
+#define U80211_DRV_RTL8188EU_CAM_ALGORITHM_CCMP 4
+#define U80211_DRV_RTL8188EU_CAM_ALGORITHM_WEP104 5
 
 #define U80211_DRV_RTL8188EU_REG_SECCFG 0x0680
 #define U80211_DRV_RTL8188EU_REG_SECCFG_TXUCKEY_DEF (1u << 0)
@@ -353,6 +365,8 @@ int u80211_drv_rtl8188eu_rf_load_table(u80211_drv_device_handle_t device);
 
 int u80211_drv_rtl8188eu_set_tx_power(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t channel);
 int u80211_drv_rtl8188eu_set_channel(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t channel);
+int u80211_drv_rtl8188eu_set_key(u80211_drv_rtl8188eu_t *rtl8188eu, const u80211_drv_key_t *key);
+int u80211_drv_rtl8188eu_del_key(u80211_drv_rtl8188eu_t *rtl8188eu, uint8_t index);
 int u80211_drv_rtl8188eu_tx_buffer_allocate(size_t size, void **buffer);
 void u80211_drv_rtl8188eu_tx_buffer_free(void *buffer);
 int u80211_drv_rtl8188eu_transmit(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, size_t size, size_t current_offset);

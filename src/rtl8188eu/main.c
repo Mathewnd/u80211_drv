@@ -23,11 +23,21 @@ static int set_channel(void *device, uint8_t channel) {
 	return u80211_drv_rtl8188eu_set_channel(device, channel);
 }
 
+static int set_key(void *device, const u80211_drv_key_t *key) {
+	return u80211_drv_rtl8188eu_set_key(device, key);
+}
+
+static int del_key(void *device, uint8_t index) {
+	return u80211_drv_rtl8188eu_del_key(device, index);
+}
+
 static const u80211_drv_device_ops_t device_ops = {
 	.allocate_tx_buffer = u80211_drv_rtl8188eu_tx_buffer_allocate,
 	.free_tx_buffer = u80211_drv_rtl8188eu_tx_buffer_free,
 	.transmit = transmit,
 	.set_channel = set_channel,
+	.set_key = set_key,
+	.del_key = del_key,
 };
 
 static int discover_bulk_endpoints(u80211_drv_rtl8188eu_t *rtl8188eu) {

@@ -370,13 +370,12 @@ int u80211_drv_rtl8188eu_mac_configure_hardware_offloads(u80211_drv_device_handl
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		return status;
 
-	uint16_t security_config = U80211_DRV_RTL8188EU_REG_SECCFG_TXUCKEY_DEF |
-		U80211_DRV_RTL8188EU_REG_SECCFG_RXUCKEY_DEF |
-		U80211_DRV_RTL8188EU_REG_SECCFG_TXENC_ENABLE |
-		U80211_DRV_RTL8188EU_REG_SECCFG_RXENC_ENABLE |
-		U80211_DRV_RTL8188EU_REG_SECCFG_TXBCKEY_DEF |
-		U80211_DRV_RTL8188EU_REG_SECCFG_RXBCKEY_DEF;
-	status = u80211_drv_rtl8188eu_reg_write16(device, U80211_DRV_RTL8188EU_REG_SECCFG, security_config);
+	// station-mode WPA keys are selected from the CAM by peer address or the
+	// cipher-header key ID. the default-key bits are for legacy key selection
+	// and can make encrypted data use a different CAM entry than the handshake.
+	uint8_t security_config = U80211_DRV_RTL8188EU_REG_SECCFG_TXENC_ENABLE |
+		U80211_DRV_RTL8188EU_REG_SECCFG_RXENC_ENABLE;
+	status = u80211_drv_rtl8188eu_reg_write8(device, U80211_DRV_RTL8188EU_REG_SECCFG, security_config);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		return status;
 

@@ -17,6 +17,9 @@
 #define RTL8188EU_TX_RAID_11BG 4
 #define RTL8188EU_TX_RAID_11B 6
 #define RTL8188EU_TX_RAID_SHIFT 16
+#define RTL8188EU_TX_DESCRIPTOR_MACID_MASK 0x1f
+#define RTL8188EU_TX_DESCRIPTOR_ENABLE_DESCRIPTOR_ID (1u << 21)
+#define RTL8188EU_TX_DESCRIPTOR_SECURITY_AES 0x00c00000
 
 #define RTL8188EU_TX_DESCRIPTOR_OWN (1u << 7)
 #define RTL8188EU_TX_DESCRIPTOR_FIRST_SEGMENT (1u << 3)
@@ -74,15 +77,25 @@ static int build_descriptor(const uint8_t *frame, size_t frame_size, int key_ind
 	// once HT is implemented, that stuff would go here.
 	descriptor[3] = RTL8188EU_TX_DESCRIPTOR_OWN | RTL8188EU_TX_DESCRIPTOR_FIRST_SEGMENT | RTL8188EU_TX_DESCRIPTOR_LAST_SEGMENT;
 
-	const uint8_t *destination = u80211_drv_80211_destination_address(frame, frame_control);
-	bool group_addressed = (destination[0] & 1u) != 0;
+	const uint8_t *receiver = u80211_drv_80211_receiver_address(frame);
+	bool group_addressed = (receiver[0] & 1u) != 0;
 	if (group_addressed)
 		descriptor[3] |= RTL8188EU_TX_DESCRIPTOR_BROADCAST_MULTICAST;
 
 	// use the mixed 11b/g table for unicast data and the basic 11b table for management and group-addressed traffic.
 	uint8_t raid = frame_type == U80211_DRV_80211_FRAME_TYPE_DATA && !group_addressed ? RTL8188EU_TX_RAID_11BG : RTL8188EU_TX_RAID_11B;
-	// macid 0, selected queue TODO: once hardware encryption support is implemented, handle it here (AES selection)
-	u80211_drv_serialize_le32(descriptor + 4, ((uint32_t)queue << 8) | ((uint32_t)raid << RTL8188EU_TX_RAID_SHIFT));
+	uint32_t descriptor1 = ((uint32_t)queue << 8) | ((uint32_t)raid << RTL8188EU_TX_RAID_SHIFT);
+	if (key_index >= 0) {
+		if (frame_type != U80211_DRV_80211_FRAME_TYPE_DATA)
+			return U80211_DRV_STATUS_INVALID_ARGUMENT;
+
+		descriptor1 |= RTL8188EU_TX_DESCRIPTOR_SECURITY_AES;
+		if (group_addressed) {
+			descriptor1 |= RTL8188EU_TX_DESCRIPTOR_ENABLE_DESCRIPTOR_ID;
+			descriptor1 |= (uint32_t)key_index & RTL8188EU_TX_DESCRIPTOR_MACID_MASK;
+		}
+	}
+	u80211_drv_serialize_le32(descriptor + 4, descriptor1);
 
 	// do not combine packets and use a known working setting for antennas (0b111, last bit is set in dword 7)
 	u80211_drv_serialize_le32(descriptor + 8, RTL8188EU_TX_DESCRIPTOR_AGGREGATION_BREAK | RTL8188EU_TX_DESCRIPTOR_ANTENNA_A | RTL8188EU_TX_DESCRIPTOR_ANTENNA_B);

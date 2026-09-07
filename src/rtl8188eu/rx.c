@@ -16,8 +16,13 @@
 #define RTL8188EU_RX_DESCRIPTOR_ICV_ERROR (1u << 15)
 #define RTL8188EU_RX_DESCRIPTOR_DRVINFO_SIZE_MASK 0x000f0000
 #define RTL8188EU_RX_DESCRIPTOR_DRVINFO_SIZE_SHIFT 16
+#define RTL8188EU_RX_DESCRIPTOR_SECURITY_MASK 0x00700000
+#define RTL8188EU_RX_DESCRIPTOR_SECURITY_SHIFT 20
+#define RTL8188EU_RX_DESCRIPTOR_SECURITY_NONE 0
+#define RTL8188EU_RX_DESCRIPTOR_SECURITY_AES 4
 #define RTL8188EU_RX_DESCRIPTOR_SHIFT_MASK 0x03000000
 #define RTL8188EU_RX_DESCRIPTOR_SHIFT_SHIFT 24
+#define RTL8188EU_RX_DESCRIPTOR_SOFTWARE_DECRYPTED (1u << 27)
 #define RTL8188EU_RX_DESCRIPTOR_REPORT_SELECT_MASK 0x0000c000
 
 #define RTL8188EU_RX_DESCRIPTOR_PACKET_COUNT_MASK 0x00ff0000
@@ -48,9 +53,10 @@ static void process_rx_buffer(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, s
 		// TODO: extract channel?
 		// TODO: extract rate?
 		// TODO: get dbm info from phy data?
-		// TODO: check for packet security once implemented (security and swdec fields on dw0)
 		bool is_rx_record = (descriptor3 & RTL8188EU_RX_DESCRIPTOR_REPORT_SELECT_MASK) == 0;
 		bool crc_icv_error = descriptor0 & (RTL8188EU_RX_DESCRIPTOR_CRC_ERROR | RTL8188EU_RX_DESCRIPTOR_ICV_ERROR);
+		uint32_t security = (descriptor0 & RTL8188EU_RX_DESCRIPTOR_SECURITY_MASK) >> RTL8188EU_RX_DESCRIPTOR_SECURITY_SHIFT;
+		bool software_decryption_required = (descriptor0 & RTL8188EU_RX_DESCRIPTOR_SOFTWARE_DECRYPTED) != 0;
 		size_t packet_size = descriptor0 & RTL8188EU_RX_DESCRIPTOR_PACKET_LENGTH_MASK;
 		size_t drvinfo_size = ((descriptor0 & RTL8188EU_RX_DESCRIPTOR_DRVINFO_SIZE_MASK) >> RTL8188EU_RX_DESCRIPTOR_DRVINFO_SIZE_SHIFT) * 8;
 		size_t descriptor_shift = (descriptor0 & RTL8188EU_RX_DESCRIPTOR_SHIFT_MASK) >> RTL8188EU_RX_DESCRIPTOR_SHIFT_SHIFT;
@@ -61,11 +67,18 @@ static void process_rx_buffer(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, s
 			break;
 
 		if (packet_size != 0 && packet_size <= U80211_DRV_80211_MAX_MPDU_SIZE && !crc_icv_error && is_rx_record) {
+			uint8_t *packet = descriptor + packet_offset;
+			// u80211 consumes the cipher header and MIC after hardware has decrypted the payload.
+			if (security != RTL8188EU_RX_DESCRIPTOR_SECURITY_NONE &&
+				(security != RTL8188EU_RX_DESCRIPTOR_SECURITY_AES || software_decryption_required))
+				goto next_packet;
+
 			u80211_drv_network_device_handle_t network_device = __atomic_load_n(&rtl8188eu->network_device, __ATOMIC_ACQUIRE);
 			if (network_device != NULL)
-				u80211_drv_packet_received(network_device, descriptor + packet_offset, packet_size);
+				u80211_drv_packet_received(network_device, packet, packet_size);
 		}
 
+	next_packet:
 		--packet_count;
 		if (packet_count == 0)
 			break;

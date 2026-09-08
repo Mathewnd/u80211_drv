@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include <u80211_drv/kernel_interface.h>
+#include <u80211_drv/status.h>
 
 #ifdef __cplusplus
 extern "C" {

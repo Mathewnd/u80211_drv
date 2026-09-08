@@ -19,6 +19,7 @@
 #define RTL8188EU_RX_DESCRIPTOR_SECURITY_MASK 0x00700000
 #define RTL8188EU_RX_DESCRIPTOR_SECURITY_SHIFT 20
 #define RTL8188EU_RX_DESCRIPTOR_SECURITY_NONE 0
+#define RTL8188EU_RX_DESCRIPTOR_SECURITY_TKIP 2
 #define RTL8188EU_RX_DESCRIPTOR_SECURITY_AES 4
 #define RTL8188EU_RX_DESCRIPTOR_SHIFT_MASK 0x03000000
 #define RTL8188EU_RX_DESCRIPTOR_SHIFT_SHIFT 24
@@ -68,9 +69,10 @@ static void process_rx_buffer(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, s
 
 		if (packet_size != 0 && packet_size <= U80211_DRV_80211_MAX_MPDU_SIZE && !crc_icv_error && is_rx_record) {
 			uint8_t *packet = descriptor + packet_offset;
-			// u80211 consumes the cipher header and MIC after hardware has decrypted the payload.
+			// u80211 consumes the cipher header and trailer after hardware has decrypted the payload.
 			if (security != RTL8188EU_RX_DESCRIPTOR_SECURITY_NONE &&
-				(security != RTL8188EU_RX_DESCRIPTOR_SECURITY_AES || software_decryption_required))
+				((security != RTL8188EU_RX_DESCRIPTOR_SECURITY_TKIP && security != RTL8188EU_RX_DESCRIPTOR_SECURITY_AES) ||
+				software_decryption_required))
 				goto next_packet;
 
 			u80211_drv_network_device_handle_t network_device = __atomic_load_n(&rtl8188eu->network_device, __ATOMIC_ACQUIRE);

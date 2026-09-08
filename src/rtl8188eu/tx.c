@@ -19,6 +19,7 @@
 #define RTL8188EU_TX_RAID_SHIFT 16
 #define RTL8188EU_TX_DESCRIPTOR_MACID_MASK 0x1f
 #define RTL8188EU_TX_DESCRIPTOR_ENABLE_DESCRIPTOR_ID (1u << 21)
+#define RTL8188EU_TX_DESCRIPTOR_SECURITY_TKIP 0x00400000
 #define RTL8188EU_TX_DESCRIPTOR_SECURITY_AES 0x00c00000
 
 #define RTL8188EU_TX_DESCRIPTOR_OWN (1u << 7)
@@ -53,10 +54,17 @@ static void calculate_checksum(uint8_t *descriptor) {
 	u80211_drv_serialize_le16(descriptor + 28, checksum);
 }
 
-static int build_descriptor(const uint8_t *frame, size_t frame_size, int key_index, uint8_t *descriptor, uint8_t *queue_out) {
+static int build_descriptor(const uint8_t *frame, size_t frame_size, const u80211_drv_transmit_options_t *options, uint8_t *descriptor, uint8_t *queue_out) {
+	int key_index = options == NULL ? -1 : options->key;
+	int cipher = options == NULL ? U80211_DRV_CIPHER_NONE : options->cipher;
+
 	if (frame_size < U80211_DRV_80211_HEADER_MINIMUM_SIZE)
 		return U80211_DRV_STATUS_MALFORMED_PACKET;
+
 	if (key_index < -1 || key_index > U80211_DRV_RTL8188EU_CAM_CTL0_KEY_ID_MASK)
+		return U80211_DRV_STATUS_INVALID_ARGUMENT;
+
+	if ((key_index < 0) != (cipher == U80211_DRV_CIPHER_NONE))
 		return U80211_DRV_STATUS_INVALID_ARGUMENT;
 
 	uint16_t frame_control = u80211_drv_80211_frame_control(frame);
@@ -86,10 +94,17 @@ static int build_descriptor(const uint8_t *frame, size_t frame_size, int key_ind
 	uint8_t raid = frame_type == U80211_DRV_80211_FRAME_TYPE_DATA && !group_addressed ? RTL8188EU_TX_RAID_11BG : RTL8188EU_TX_RAID_11B;
 	uint32_t descriptor1 = ((uint32_t)queue << 8) | ((uint32_t)raid << RTL8188EU_TX_RAID_SHIFT);
 	if (key_index >= 0) {
+		// use hardware encryption. set the selected cipher bit
 		if (frame_type != U80211_DRV_80211_FRAME_TYPE_DATA)
 			return U80211_DRV_STATUS_INVALID_ARGUMENT;
 
-		descriptor1 |= RTL8188EU_TX_DESCRIPTOR_SECURITY_AES;
+		if (cipher == U80211_DRV_CIPHER_CCMP)
+			descriptor1 |= RTL8188EU_TX_DESCRIPTOR_SECURITY_AES;
+		else if (cipher == U80211_DRV_CIPHER_TKIP)
+			descriptor1 |= RTL8188EU_TX_DESCRIPTOR_SECURITY_TKIP;
+		else
+			return U80211_DRV_STATUS_NOT_SUPPORTED;
+
 		if (group_addressed) {
 			descriptor1 |= RTL8188EU_TX_DESCRIPTOR_ENABLE_DESCRIPTOR_ID;
 			descriptor1 |= (uint32_t)key_index & RTL8188EU_TX_DESCRIPTOR_MACID_MASK;
@@ -145,13 +160,12 @@ void u80211_drv_rtl8188eu_tx_buffer_free(void *buffer) {
 }
 
 int u80211_drv_rtl8188eu_transmit(u80211_drv_rtl8188eu_t *rtl8188eu, void *buffer, size_t size, size_t current_offset, const u80211_drv_transmit_options_t *options) {
-	int key_index = options == NULL ? -1 : options->key;
 	uint8_t *frame = (uint8_t *)buffer + current_offset;
 	size_t frame_size = size - current_offset;
 	uint8_t *descriptor = frame - RTL8188EU_TX_DESCRIPTOR_SIZE;
 
 	uint8_t queue;
-	int status = build_descriptor(frame, frame_size, key_index, descriptor, &queue);
+	int status = build_descriptor(frame, frame_size, options, descriptor, &queue);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		goto cleanup;
 

@@ -40,6 +40,7 @@ typedef struct {
 	uint8_t rate_bitmap[U80211_DRV_DEVICE_RATE_BITMAP_LEN];
 } u80211_drv_device_metadata_t;
 
+#define U80211_DRV_CIPHER_NONE -1
 #define U80211_DRV_CIPHER_CCMP 0
 #define U80211_DRV_CIPHER_TKIP 1
 #define U80211_DRV_CIPHER_WEP40 2
@@ -61,6 +62,7 @@ typedef struct {
 
 typedef struct {
 	int key;
+	int cipher;
 } u80211_drv_transmit_options_t;
 
 typedef struct {

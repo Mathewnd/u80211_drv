@@ -140,13 +140,37 @@ static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *desc
 	test_device_t *test_device = device->driver_data;
 	u80211_drv_transmit_options_t driver_options = {
 		.key = options == NULL ? -1 : options->key,
+		.cipher = U80211_DRV_CIPHER_NONE,
 	};
-	int status = test_device->ops->transmit(test_device->device, descriptor->data, descriptor->size, descriptor->current_offset, &driver_options);
+	int status;
+	if (options != NULL) {
+		switch (options->cipher) {
+			case -1:
+				break;
+			case U80211_CIPHER_CCMP:
+				driver_options.cipher = U80211_DRV_CIPHER_CCMP;
+				break;
+			case U80211_CIPHER_TKIP:
+				driver_options.cipher = U80211_DRV_CIPHER_TKIP;
+				break;
+			default:
+				status = U80211_STATUS_UNSUPPORTED;
+				goto free_buffer;
+		}
+	}
 
+	status = status_to_u80211(test_device->ops->transmit(test_device->device, descriptor->data,
+		descriptor->size, descriptor->current_offset, &driver_options));
+	goto clear_descriptor;
+
+free_buffer:
+	test_device->ops->free_tx_buffer(descriptor->data);
+
+clear_descriptor:
 	descriptor->data = NULL;
 	descriptor->size = 0;
 	descriptor->current_offset = 0;
-	return status_to_u80211(status);
+	return status;
 }
 
 static int set_channel(u80211_device_t *device, int channel) {
@@ -161,15 +185,18 @@ static int set_key(u80211_device_t *device, const u80211_key_t *key) {
 	if (key == NULL)
 		return U80211_STATUS_NOT_PERMITTED;
 
-	if (key->cipher != U80211_CIPHER_CCMP)
-		return U80211_STATUS_UNSUPPORTED;
-
 	u80211_drv_key_t driver_key = {
-		.cipher = U80211_DRV_CIPHER_CCMP,
 		.index = key->index,
 		.key = key->key,
 		.key_len = key->key_len,
 	};
+	if (key->cipher == U80211_CIPHER_CCMP)
+		driver_key.cipher = U80211_DRV_CIPHER_CCMP;
+	else if (key->cipher == U80211_CIPHER_TKIP)
+		driver_key.cipher = U80211_DRV_CIPHER_TKIP;
+	else
+		return U80211_STATUS_UNSUPPORTED;
+
 	memcpy(driver_key.peer, key->peer.bytes, sizeof(driver_key.peer));
 	if (key->flags & U80211_KEY_PAIRWISE)
 		driver_key.flags |= U80211_DRV_KEY_PAIRWISE;

@@ -7,7 +7,7 @@ This is still experimental, so use with caution.
 Only currently supported NIC is the rtl8188eu (tested with DWA-123 D1 dongle)
 
 # Higher layer
-An easy-to-integrate 802.11 is available in the [u80211 repository](https://github.com/mathewnd/u80211).
+An easy-to-integrate 802.11 layer is available in the [u80211 repository](https://github.com/mathewnd/u80211).
 
 # How to port
 

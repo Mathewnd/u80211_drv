@@ -264,10 +264,19 @@ static int handle_set_key(u80211_wpas_server_t *server, uint32_t request_id, con
 	uint32_t flags = le32toh(request->flags);
 	size_t sequence_length = le16toh(request->sequence_length);
 	size_t key_length = le16toh(request->key_length);
-	if (request->cipher != U80211_WPAS_CIPHER_CCMP)
+	u80211_cipher_t cipher;
+	size_t expected_key_length;
+	if (request->cipher == U80211_WPAS_CIPHER_CCMP) {
+		cipher = U80211_CIPHER_CCMP;
+		expected_key_length = 16;
+	} else if (request->cipher == U80211_WPAS_CIPHER_TKIP) {
+		cipher = U80211_CIPHER_TKIP;
+		expected_key_length = 32;
+	} else {
 		return send_response(server, request_id, U80211_STATUS_UNSUPPORTED, NULL, 0);
+	}
 	if (request->key_index > 3 || validate_key_flags(flags, false) != 0 ||
-		(sequence_length != 0 && sequence_length != 6) || key_length != 16 ||
+		(sequence_length != 0 && sequence_length != 6) || key_length != expected_key_length ||
 		payload_length != sizeof(*request) + sequence_length + key_length)
 		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
 	if (((request->peer[0] & 1U) != 0) != ((flags & U80211_WPAS_KEY_GROUP) != 0))
@@ -277,7 +286,7 @@ static int handle_set_key(u80211_wpas_server_t *server, uint32_t request_id, con
 		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
 
 	u80211_key_t key = {
-		.cipher = U80211_CIPHER_CCMP,
+		.cipher = cipher,
 		.index = request->key_index,
 		.key = payload + sizeof(*request) + sequence_length,
 		.key_len = key_length,

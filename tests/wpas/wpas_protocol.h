@@ -5,7 +5,7 @@
 
 #define U80211_WPAS_SOCKET_PATH "/tmp/.u80211_sock"
 #define U80211_WPAS_PROTOCOL_MAGIC UINT32_C(0x55383032)
-#define U80211_WPAS_PROTOCOL_VERSION UINT16_C(2)
+#define U80211_WPAS_PROTOCOL_VERSION UINT16_C(3)
 #define U80211_WPAS_MAX_PAYLOAD UINT32_C(65535)
 
 enum u80211_wpas_message_type {
@@ -50,6 +50,7 @@ typedef struct __attribute__((packed)) {
 
 enum u80211_wpas_cipher {
 	U80211_WPAS_CIPHER_CCMP = 0,
+	U80211_WPAS_CIPHER_TKIP = 1,
 };
 
 enum u80211_wpas_key_flags {

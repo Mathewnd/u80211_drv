@@ -32,7 +32,7 @@
  DRV_OBJS += ../src/drivers/driver_wired.o
 --- /dev/null
 +++ b/src/drivers/driver_u80211.c
-@@ -0,0 +1,822 @@
+@@ -0,0 +1,825 @@
 +/*
 + * u80211 driver interface.  The actual 802.11 implementation lives in the
 + * u80211 test process; this wrapper transports control requests over the
@@ -51,7 +51,7 @@
 +/* Private protocol shared only with the u80211 hardware test harness. */
 +#define U80211_WPAS_SOCKET_PATH "/tmp/.u80211_sock"
 +#define U80211_WPAS_PROTOCOL_MAGIC 0x55383032U
-+#define U80211_WPAS_PROTOCOL_VERSION 2U
++#define U80211_WPAS_PROTOCOL_VERSION 3U
 +#define U80211_WPAS_MAX_PAYLOAD 65535U
 +
 +enum u80211_wpas_message_type {
@@ -92,6 +92,7 @@
 +
 +enum u80211_wpas_cipher {
 +	U80211_WPAS_CIPHER_CCMP = 0,
++	U80211_WPAS_CIPHER_TKIP = 1,
 +};
 +
 +enum u80211_wpas_key_flags {
@@ -591,7 +592,7 @@
 +	(void) priv;
 +	os_memset(capa, 0, sizeof(*capa));
 +	capa->key_mgmt = WPA_DRIVER_CAPA_KEY_MGMT_WPA2_PSK;
-+	capa->enc = WPA_DRIVER_CAPA_ENC_CCMP;
++	capa->enc = WPA_DRIVER_CAPA_ENC_CCMP | WPA_DRIVER_CAPA_ENC_TKIP;
 +	capa->auth = WPA_DRIVER_AUTH_OPEN;
 +	return 0;
 +}
@@ -703,12 +704,13 @@
 +			U80211_WPAS_REQUEST_DELETE_KEY, &request, sizeof(request));
 +	}
 +
-+	if (params->alg == WPA_ALG_CCMP) {
-+		u8 request_buffer[sizeof(u80211_wpas_set_key_t) + 6 + 16];
++	if (params->alg == WPA_ALG_CCMP || params->alg == WPA_ALG_TKIP) {
++		u8 request_buffer[sizeof(u80211_wpas_set_key_t) + 6 + 32];
 +		u80211_wpas_set_key_t *request = (void *) request_buffer;
 +		u8 *variable_data = request_buffer + sizeof(*request);
++		size_t expected_key_len = params->alg == WPA_ALG_CCMP ? 16 : 32;
 +
-+		if (params->key == NULL || params->key_len != 16 ||
++		if (params->key == NULL || params->key_len != expected_key_len ||
 +			(params->seq_len != 0 && params->seq_len != 6) ||
 +			(params->seq_len != 0 && params->seq == NULL) ||
 +			u80211_translate_key_flags(params->key_flag, 0, &flags) < 0)
@@ -716,7 +718,8 @@
 +		os_memset(request_buffer, 0, sizeof(request_buffer));
 +		if (u80211_key_peer(drv, params, flags, request->peer) < 0)
 +			return -1;
-+		request->cipher = U80211_WPAS_CIPHER_CCMP;
++		request->cipher = params->alg == WPA_ALG_CCMP ?
++			U80211_WPAS_CIPHER_CCMP : U80211_WPAS_CIPHER_TKIP;
 +		request->key_index = params->key_idx;
 +		u80211_put_le32(&request->flags, flags);
 +		u80211_put_le16(&request->sequence_length, params->seq_len);

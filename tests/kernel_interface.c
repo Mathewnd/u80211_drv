@@ -18,17 +18,23 @@
 #include <u80211_drv/status.h>
 #include <u80211_drv/kernel_interface.h>
 
+typedef struct u80211_test_work u80211_test_work_t;
+
 typedef struct {
+	u80211_test_work_t *work;
+} u80211_test_timer_t;
+
+struct u80211_test_work {
 	pthread_t thread;
-	pthread_mutex_t mutex;
 	pthread_cond_t condition;
 	bool stopping;
 	bool pending;
 	bool destroy_on_exit;
 	struct timespec deadline;
+	u80211_test_timer_t *timer;
 	u80211_kernel_work_fn_t function;
 	void *context;
-} u80211_test_work_t;
+};
 
 typedef struct {
 	struct libusb_transfer *transfer;
@@ -47,6 +53,8 @@ static int u80211_drv_kernel_status_from_libusb(int status) {
 
 	return U80211_DRV_STATUS_UNKNOWN_ERROR;
 }
+
+static pthread_mutex_t u80211_test_work_state_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *u80211_drv_kernel_allocate(size_t size) {
 	return malloc(size);
@@ -246,7 +254,6 @@ void u80211_drv_kernel_print(int level, const char *msg) {
 
 static void u80211_test_destroy_work(u80211_test_work_t *work) {
 	pthread_cond_destroy(&work->condition);
-	pthread_mutex_destroy(&work->mutex);
 	free(work);
 }
 
@@ -272,35 +279,43 @@ static struct timespec u80211_test_deadline_after_ms(size_t milliseconds) {
 
 static void *u80211_test_work_thread(void *argument) {
 	u80211_test_work_t *work = argument;
-	pthread_mutex_lock(&work->mutex);
+	pthread_mutex_lock(&u80211_test_work_state_mutex);
 
 	for (;;) {
 		while (!work->stopping && !work->pending)
-			pthread_cond_wait(&work->condition, &work->mutex);
+			pthread_cond_wait(&work->condition, &u80211_test_work_state_mutex);
 		if (work->stopping)
 			break;
 
-		struct timespec now;
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		while (!work->stopping && u80211_test_timespec_compare(&now, &work->deadline) < 0) {
-			int status = pthread_cond_timedwait(&work->condition, &work->mutex, &work->deadline);
+		while (!work->stopping && work->pending && work->timer != NULL) {
+			struct timespec now;
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			if (u80211_test_timespec_compare(&now, &work->deadline) >= 0)
+				break;
+
+			int status = pthread_cond_timedwait(&work->condition, &u80211_test_work_state_mutex, &work->deadline);
 			if (status != 0 && status != ETIMEDOUT)
 				continue;
-			clock_gettime(CLOCK_MONOTONIC, &now);
 		}
 		if (work->stopping)
 			break;
+		if (!work->pending)
+			continue;
 
 		u80211_kernel_work_fn_t function = work->function;
 		void *context = work->context;
+		if (work->timer != NULL) {
+			work->timer->work = NULL;
+			work->timer = NULL;
+		}
 		work->pending = false;
-		pthread_mutex_unlock(&work->mutex);
+		pthread_mutex_unlock(&u80211_test_work_state_mutex);
 		function(context);
-		pthread_mutex_lock(&work->mutex);
+		pthread_mutex_lock(&u80211_test_work_state_mutex);
 	}
 
 	bool destroy_on_exit = work->destroy_on_exit;
-	pthread_mutex_unlock(&work->mutex);
+	pthread_mutex_unlock(&u80211_test_work_state_mutex);
 	if (destroy_on_exit)
 		u80211_test_destroy_work(work);
 	return NULL;
@@ -424,25 +439,39 @@ void u80211_kernel_release_rwlock_shared(void *rwlock) {
 	pthread_rwlock_unlock(rwlock);
 }
 
+void *u80211_kernel_allocate_timer(void) {
+	return calloc(1, sizeof(u80211_test_timer_t));
+}
+
+void u80211_kernel_free_timer(void *opaque_timer) {
+	u80211_test_timer_t *timer = opaque_timer;
+	pthread_mutex_lock(&u80211_test_work_state_mutex);
+	if (timer->work != NULL) {
+		u80211_test_work_t *work = timer->work;
+		if (work->timer == timer) {
+			work->timer = NULL;
+			work->pending = false;
+			pthread_cond_signal(&work->condition);
+		}
+		timer->work = NULL;
+	}
+	pthread_mutex_unlock(&u80211_test_work_state_mutex);
+	free(timer);
+}
+
 void *u80211_kernel_allocate_work(void) {
 	u80211_test_work_t *work = calloc(1, sizeof(*work));
 	if (work == NULL)
 		return NULL;
-	if (pthread_mutex_init(&work->mutex, NULL) != 0) {
-		free(work);
-		return NULL;
-	}
 
 	pthread_condattr_t attributes;
 	if (pthread_condattr_init(&attributes) != 0) {
-		pthread_mutex_destroy(&work->mutex);
 		free(work);
 		return NULL;
 	}
 	if (pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC) != 0 ||
 		pthread_cond_init(&work->condition, &attributes) != 0) {
 		pthread_condattr_destroy(&attributes);
-		pthread_mutex_destroy(&work->mutex);
 		free(work);
 		return NULL;
 	}
@@ -450,35 +479,60 @@ void *u80211_kernel_allocate_work(void) {
 
 	if (pthread_create(&work->thread, NULL, u80211_test_work_thread, work) != 0) {
 		pthread_cond_destroy(&work->condition);
-		pthread_mutex_destroy(&work->mutex);
 		free(work);
 		return NULL;
 	}
 	return work;
 }
 
-void u80211_kernel_enqueue_work(void *opaque_work, u80211_kernel_work_fn_t function, void *context, size_t milliseconds) {
+void u80211_kernel_enqueue_work(void *opaque_work, u80211_kernel_work_fn_t function, void *context) {
 	u80211_test_work_t *work = opaque_work;
-	pthread_mutex_lock(&work->mutex);
-	if (!work->pending) {
+	pthread_mutex_lock(&u80211_test_work_state_mutex);
+	if (!work->pending && !work->stopping) {
 		work->function = function;
 		work->context = context;
-		work->deadline = u80211_test_deadline_after_ms(milliseconds);
 		work->pending = true;
 		pthread_cond_signal(&work->condition);
 	}
-	pthread_mutex_unlock(&work->mutex);
+	pthread_mutex_unlock(&u80211_test_work_state_mutex);
+}
+
+void u80211_kernel_enqueue_delayed_work(void *opaque_work, void *opaque_timer,
+		u80211_kernel_work_fn_t function, void *context, size_t milliseconds) {
+	if (milliseconds == 0) {
+		u80211_kernel_enqueue_work(opaque_work, function, context);
+		return;
+	}
+
+	u80211_test_work_t *work = opaque_work;
+	u80211_test_timer_t *timer = opaque_timer;
+	pthread_mutex_lock(&u80211_test_work_state_mutex);
+	if (!work->pending && !work->stopping && timer->work == NULL) {
+		work->function = function;
+		work->context = context;
+		work->deadline = u80211_test_deadline_after_ms(milliseconds);
+		work->timer = timer;
+		timer->work = work;
+		work->pending = true;
+		pthread_cond_signal(&work->condition);
+	}
+	pthread_mutex_unlock(&u80211_test_work_state_mutex);
 }
 
 void u80211_kernel_free_work(void *opaque_work) {
 	u80211_test_work_t *work = opaque_work;
 	bool destroy_on_exit = pthread_equal(pthread_self(), work->thread);
 
-	pthread_mutex_lock(&work->mutex);
+	pthread_mutex_lock(&u80211_test_work_state_mutex);
 	work->stopping = true;
+	work->pending = false;
 	work->destroy_on_exit = destroy_on_exit;
+	if (work->timer != NULL) {
+		work->timer->work = NULL;
+		work->timer = NULL;
+	}
 	pthread_cond_signal(&work->condition);
-	pthread_mutex_unlock(&work->mutex);
+	pthread_mutex_unlock(&u80211_test_work_state_mutex);
 
 	if (destroy_on_exit) {
 		pthread_detach(work->thread);

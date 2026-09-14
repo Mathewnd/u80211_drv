@@ -72,7 +72,7 @@ static void *tap_io_loop(void *context) {
 		if (u80211_allocate_tx_buffer(device, &descriptor) != U80211_STATUS_SUCCESS)
 			continue;
 		if ((size_t)size > descriptor.size) {
-			device->ops->free_tx_buffer(device, &descriptor);
+			device->ops->free_tx_buffer(device->driver_data, &descriptor);
 			continue;
 		}
 		descriptor.current_offset = descriptor.size - (size_t)size;
@@ -113,8 +113,8 @@ static int status_to_u80211(int status) {
 	return U80211_STATUS_UNKNOWN_ERROR;
 }
 
-static int allocate_tx_buffer(u80211_device_t *device, size_t size, u80211_tx_buffer_descriptor_t *descriptor) {
-	test_device_t *test_device = device->driver_data;
+static int allocate_tx_buffer(void *opaque_test_device, size_t size, u80211_tx_buffer_descriptor_t *descriptor) {
+	test_device_t *test_device = opaque_test_device;
 	void *buffer;
 	int status = test_device->ops->allocate_tx_buffer(size, &buffer);
 	if (status != U80211_DRV_STATUS_SUCCESS)
@@ -126,8 +126,8 @@ static int allocate_tx_buffer(u80211_device_t *device, size_t size, u80211_tx_bu
 	return U80211_STATUS_SUCCESS;
 }
 
-static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor) {
-	test_device_t *test_device = device->driver_data;
+static int free_tx_buffer(void *opaque_test_device, u80211_tx_buffer_descriptor_t *descriptor) {
+	test_device_t *test_device = opaque_test_device;
 	test_device->ops->free_tx_buffer(descriptor->data);
 
 	descriptor->data = NULL;
@@ -136,8 +136,8 @@ static int free_tx_buffer(u80211_device_t *device, u80211_tx_buffer_descriptor_t
 	return U80211_STATUS_SUCCESS;
 }
 
-static int transmit(u80211_device_t *device, u80211_tx_buffer_descriptor_t *descriptor, const u80211_transmit_options_t *options) {
-	test_device_t *test_device = device->driver_data;
+static int transmit(void *opaque_test_device, u80211_tx_buffer_descriptor_t *descriptor, const u80211_transmit_options_t *options) {
+	test_device_t *test_device = opaque_test_device;
 	u80211_drv_transmit_options_t driver_options = {
 		.key = options == NULL ? -1 : options->key,
 		.cipher = U80211_DRV_CIPHER_NONE,
@@ -173,15 +173,16 @@ clear_descriptor:
 	return status;
 }
 
-static int set_channel(u80211_device_t *device, int channel) {
+static int set_channel(void *opaque_test_device, int channel) {
+	test_device_t *test_device = opaque_test_device;
 	if (channel < 1 || channel > UINT8_MAX)
 		return U80211_STATUS_NOT_PERMITTED;
 
-	test_device_t *test_device = device->driver_data;
 	return status_to_u80211(test_device->ops->set_channel(test_device->device, (uint8_t)channel));
 }
 
-static int set_key(u80211_device_t *device, const u80211_key_t *key) {
+static int set_key(void *opaque_test_device, const u80211_key_t *key) {
+	test_device_t *test_device = opaque_test_device;
 	if (key == NULL)
 		return U80211_STATUS_NOT_PERMITTED;
 
@@ -207,14 +208,13 @@ static int set_key(u80211_device_t *device, const u80211_key_t *key) {
 	if (key->flags & U80211_KEY_TX)
 		driver_key.flags |= U80211_DRV_KEY_TX;
 
-	test_device_t *test_device = device->driver_data;
 	return status_to_u80211(test_device->ops->set_key(test_device->device, &driver_key));
 }
 
-static int delete_key(u80211_device_t *device, uint8_t index, const u80211_mac_address_t *peer, uint32_t flags) {
+static int delete_key(void *opaque_test_device, uint8_t index, const u80211_mac_address_t *peer, uint32_t flags) {
+	test_device_t *test_device = opaque_test_device;
 	(void)peer;
 	(void)flags;
-	test_device_t *test_device = device->driver_data;
 	return status_to_u80211(test_device->ops->del_key(test_device->device, index));
 }
 

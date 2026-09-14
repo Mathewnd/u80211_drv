@@ -146,12 +146,12 @@ static void monitor_operations(u80211_wpas_server_t *server) {
 }
 
 static int handle_scan_results(u80211_wpas_server_t *server, uint32_t request_id) {
-	size_t capacity = u80211_bss_cache_get_count(&server->device->bss_cache);
+	size_t capacity = u80211_bss_cache_get_count(server->device);
 	u80211_ap_t **aps = capacity == 0 ? NULL : calloc(capacity, sizeof(*aps));
 	if (capacity != 0 && aps == NULL)
 		return send_response(server, request_id, U80211_STATUS_ENOMEM, NULL, 0);
 
-	size_t count = u80211_bss_cache_get_aps(&server->device->bss_cache, aps, capacity);
+	size_t count = u80211_bss_cache_get_aps(server->device, aps, capacity);
 	size_t payload_size = sizeof(u80211_wpas_scan_results_t);
 	for (size_t i = 0; i < count; ++i) {
 		size_t ssid_length = strnlen(aps[i]->ssid, sizeof(aps[i]->ssid) - 1);
@@ -209,7 +209,7 @@ static int handle_associate(u80211_wpas_server_t *server, uint32_t request_id, c
 
 	u80211_mac_address_t bssid;
 	memcpy(bssid.bytes, request->bssid, sizeof(bssid.bytes));
-	u80211_ap_t *ap = u80211_bss_cache_find(&server->device->bss_cache, &bssid);
+	u80211_ap_t *ap = u80211_bss_cache_find(server->device, &bssid);
 	if (ap == NULL)
 		return send_response(server, request_id, U80211_STATUS_NOT_PERMITTED, NULL, 0);
 

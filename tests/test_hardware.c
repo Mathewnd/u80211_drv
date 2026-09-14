@@ -116,7 +116,7 @@ static int status_to_u80211(int status) {
 static int allocate_tx_buffer(void *opaque_test_device, size_t size, u80211_tx_buffer_descriptor_t *descriptor) {
 	test_device_t *test_device = opaque_test_device;
 	void *buffer;
-	int status = test_device->ops->allocate_tx_buffer(size, &buffer);
+	int status = test_device->ops->allocate_tx_buffer(test_device->device, size, &buffer);
 	if (status != U80211_DRV_STATUS_SUCCESS)
 		return status_to_u80211(status);
 
@@ -128,7 +128,7 @@ static int allocate_tx_buffer(void *opaque_test_device, size_t size, u80211_tx_b
 
 static int free_tx_buffer(void *opaque_test_device, u80211_tx_buffer_descriptor_t *descriptor) {
 	test_device_t *test_device = opaque_test_device;
-	test_device->ops->free_tx_buffer(descriptor->data);
+	test_device->ops->free_tx_buffer(test_device->device, descriptor->data);
 
 	descriptor->data = NULL;
 	descriptor->size = 0;
@@ -164,7 +164,7 @@ static int transmit(void *opaque_test_device, u80211_tx_buffer_descriptor_t *des
 	goto clear_descriptor;
 
 free_buffer:
-	test_device->ops->free_tx_buffer(descriptor->data);
+	test_device->ops->free_tx_buffer(test_device->device, descriptor->data);
 
 clear_descriptor:
 	descriptor->data = NULL;
